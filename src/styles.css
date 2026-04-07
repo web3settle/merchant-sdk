@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Web3Settle SDK Custom Styles ────────────────────────────────────────── */
+
+:root {
+  --w3s-color-primary: #6366f1;
+  --w3s-color-primary-hover: #4f46e5;
+  --w3s-color-surface: rgba(15, 15, 25, 0.92);
+  --w3s-color-surface-light: rgba(30, 30, 50, 0.7);
+  --w3s-color-border: rgba(99, 102, 241, 0.25);
+  --w3s-color-text: #e2e8f0;
+  --w3s-color-text-muted: #94a3b8;
+  --w3s-color-success: #22c55e;
+  --w3s-color-error: #ef4444;
+  --w3s-color-warning: #f59e0b;
+  --w3s-backdrop-blur: 16px;
+  --w3s-radius: 12px;
+  --w3s-radius-lg: 16px;
+}
+
+/* ── Glassmorphism ───────────────────────────────────────────────────────── */
+
+.w3s-glass {
+  background: var(--w3s-color-surface);
+  backdrop-filter: blur(var(--w3s-backdrop-blur));
+  -webkit-backdrop-filter: blur(var(--w3s-backdrop-blur));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--w3s-radius-lg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.w3s-glass-light {
+  background: var(--w3s-color-surface-light);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--w3s-radius);
+}
+
+/* ── Animations ──────────────────────────────────────────────────────────── */
+
+@keyframes w3s-fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes w3s-slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes w3s-pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.35);
+  }
+}
+
+@keyframes w3s-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.w3s-animate-fade-in {
+  animation: w3s-fadeIn 200ms ease-out;
+}
+
+.w3s-animate-slide-up {
+  animation: w3s-slideUp 300ms ease-out;
+}
+
+.w3s-animate-pulse-glow {
+  animation: w3s-pulse-glow 2s ease-in-out infinite;
+}
+
+.w3s-animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.03) 75%
+  );
+  background-size: 200% 100%;
+  animation: w3s-shimmer 1.5s ease-in-out infinite;
+}
+
+/* ── Scrollbar Styling ───────────────────────────────────────────────────── */
+
+.w3s-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.w3s-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.w3s-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.w3s-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ── Number Input Spinners ───────────────────────────────────────────────── */
+
+input[type='number'].w3s-no-spinner::-webkit-outer-spin-button,
+input[type='number'].w3s-no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type='number'].w3s-no-spinner {
+  -moz-appearance: textfield;
+}
