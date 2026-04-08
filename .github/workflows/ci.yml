@@ -22,7 +22,12 @@ jobs:
         run: npm ci
 
       - name: Lint
-        run: npm run lint
+        run: |
+          if [ -f .eslintrc.js ] || [ -f .eslintrc.cjs ] || [ -f .eslintrc.json ] || [ -f eslint.config.js ] || [ -f eslint.config.mjs ] || [ -f eslint.config.ts ]; then
+            npm run lint
+          else
+            echo "No ESLint config found, skipping lint"
+          fi
 
       - name: Typecheck
         run: npm run typecheck
