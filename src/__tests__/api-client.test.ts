@@ -181,7 +181,11 @@ describe('Web3SettleApiClient', () => {
       await client.createTopUpSession('user-123', 50.0, 'key-abc');
 
       const [, options] = fetchSpy.mock.calls[0] as [string, RequestInit];
-      const body = JSON.parse(options.body as string);
+      const body = JSON.parse(options.body as string) as {
+        userId: string;
+        amount: number;
+        idempotencyKey: string;
+      };
       expect(body).toEqual({ userId: 'user-123', amount: 50.0, idempotencyKey: 'key-abc' });
       expect(options.method).toBe('POST');
     });

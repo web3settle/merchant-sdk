@@ -1,10 +1,17 @@
-import React from 'react';
+import { useEffect, useId } from 'react';
 import { useConnect, useAccount, useDisconnect } from 'wagmi';
 import type { WalletConnectProps } from '../core/types';
 
 function WalletIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
       <rect x="2" y="6" width="20" height="14" rx="2" />
       <path d="M2 10h20" />
       <circle cx="17" cy="14" r="1.5" fill="currentColor" />
@@ -20,8 +27,9 @@ export function WalletConnect({ onConnected }: WalletConnectProps) {
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
   const { connectors, connect, isPending, error } = useConnect();
+  const headingId = useId();
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (isConnected && address && onConnected) {
       onConnected(address);
     }
@@ -38,7 +46,10 @@ export function WalletConnect({ onConnected }: WalletConnectProps) {
           "
         >
           <div className="w3s-flex w3s-items-center w3s-gap-3">
-            <div className="w3s-flex w3s-h-8 w3s-w-8 w3s-items-center w3s-justify-center w3s-rounded-full w3s-bg-green-500/20">
+            <div
+              aria-hidden="true"
+              className="w3s-flex w3s-h-8 w3s-w-8 w3s-items-center w3s-justify-center w3s-rounded-full w3s-bg-green-500/20"
+            >
               <div className="w3s-h-2.5 w3s-w-2.5 w3s-rounded-full w3s-bg-green-400" />
             </div>
             <div className="w3s-flex w3s-flex-col">
@@ -50,7 +61,7 @@ export function WalletConnect({ onConnected }: WalletConnectProps) {
           </div>
           <button
             type="button"
-            onClick={() => disconnect()}
+            onClick={() => { disconnect(); }}
             className="
               w3s-rounded-lg w3s-border w3s-border-white/10 w3s-bg-white/5
               w3s-px-3 w3s-py-1.5 w3s-text-xs w3s-text-slate-300
@@ -65,16 +76,20 @@ export function WalletConnect({ onConnected }: WalletConnectProps) {
   }
 
   return (
-    <div className="w3s-flex w3s-flex-col w3s-gap-3">
-      <label className="w3s-text-sm w3s-font-medium w3s-text-slate-300">
+    <div
+      role="group"
+      aria-labelledby={headingId}
+      className="w3s-flex w3s-flex-col w3s-gap-3"
+    >
+      <div id={headingId} className="w3s-text-sm w3s-font-medium w3s-text-slate-300">
         Connect Wallet
-      </label>
+      </div>
       <div className="w3s-flex w3s-flex-col w3s-gap-2">
         {connectors.map((connector) => (
           <button
             key={connector.uid}
             type="button"
-            onClick={() => connect({ connector })}
+            onClick={() => { connect({ connector }); }}
             disabled={isPending}
             className="
               w3s-flex w3s-items-center w3s-gap-3
@@ -88,7 +103,8 @@ export function WalletConnect({ onConnected }: WalletConnectProps) {
             {connector.icon ? (
               <img
                 src={connector.icon}
-                alt={connector.name}
+                alt=""
+                aria-hidden="true"
                 className="w3s-h-7 w3s-w-7 w3s-rounded-lg"
               />
             ) : (
@@ -99,9 +115,7 @@ export function WalletConnect({ onConnected }: WalletConnectProps) {
                 {connector.name}
               </span>
               {isPending && (
-                <span className="w3s-text-xs w3s-text-slate-400">
-                  Connecting...
-                </span>
+                <span className="w3s-text-xs w3s-text-slate-400">Connecting...</span>
               )}
             </div>
           </button>
@@ -109,7 +123,7 @@ export function WalletConnect({ onConnected }: WalletConnectProps) {
       </div>
 
       {error && (
-        <p className="w3s-text-xs w3s-text-red-400 w3s-mt-1">
+        <p role="alert" className="w3s-text-xs w3s-text-red-400 w3s-mt-1">
           {error.message.includes('rejected')
             ? 'Connection rejected by user'
             : error.message}

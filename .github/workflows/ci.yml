@@ -6,8 +6,12 @@ on:
   pull_request:
     branches: [develop, main]
 
+permissions:
+  contents: read
+
 jobs:
-  test:
+  verify:
+    name: Lint · Typecheck · Test · Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,12 +26,7 @@ jobs:
         run: npm ci
 
       - name: Lint
-        run: |
-          if [ -f .eslintrc.js ] || [ -f .eslintrc.cjs ] || [ -f .eslintrc.json ] || [ -f eslint.config.js ] || [ -f eslint.config.mjs ] || [ -f eslint.config.ts ]; then
-            npm run lint
-          else
-            echo "No ESLint config found, skipping lint"
-          fi
+        run: npm run lint
 
       - name: Typecheck
         run: npm run typecheck
@@ -35,13 +34,24 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Build
+        run: npm run build
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 7
+
   publish-github-packages:
-    needs: test
+    needs: verify
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -68,9 +78,12 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-npm-public:
-    needs: test
+    needs: verify
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 

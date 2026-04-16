@@ -7,19 +7,22 @@ interface PriceEntry {
 
 const priceCache = new Map<string, PriceEntry>();
 
-/**
- * Static fallback prices used when CoinGecko is unreachable.
- * These are approximate and should only be used as a last resort.
- */
 const FALLBACK_PRICES: Record<string, number> = {
   ethereum: 3500,
-  'matic-network': 0.50,
+  'matic-network': 0.5,
 };
 
-/**
- * Fetch the current USD price for a native currency by CoinGecko ID.
- * Results are cached for 60 seconds.
- */
+const STABLECOIN_SYMBOLS = new Set(['USDC', 'USDT', 'DAI', 'BUSD']);
+
+function parseCoinGeckoPrice(body: unknown, coingeckoId: string): number | null {
+  if (typeof body !== 'object' || body === null) return null;
+  const entry = (body as Record<string, unknown>)[coingeckoId];
+  if (typeof entry !== 'object' || entry === null) return null;
+  const price = (entry as Record<string, unknown>).usd;
+  if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0) return null;
+  return price;
+}
+
 export async function getNativeTokenPrice(
   chainId: number,
   signal?: AbortSignal,
@@ -35,29 +38,32 @@ export async function getNativeTokenPrice(
   }
 
   try {
-    const response = await fetch(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${coingeckoId}&vs_currencies=usd`,
-      {
-        headers: { Accept: 'application/json' },
-        signal,
-      },
-    );
+    const url = new URL('https://api.coingecko.com/api/v3/simple/price');
+    url.searchParams.set('ids', coingeckoId);
+    url.searchParams.set('vs_currencies', 'usd');
+
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal,
+    });
 
     if (!response.ok) {
       throw new Error(`CoinGecko HTTP ${response.status}`);
     }
 
-    const data = await response.json();
-    const price = data?.[coingeckoId]?.usd;
-
-    if (typeof price !== 'number' || price <= 0) {
+    const body: unknown = await response.json();
+    const price = parseCoinGeckoPrice(body, coingeckoId);
+    if (price === null) {
       throw new Error('Invalid price data from CoinGecko');
     }
 
     priceCache.set(coingeckoId, { usd: price, fetchedAt: Date.now() });
     return price;
   } catch (err) {
-    // If we have a stale cached value, prefer it over fallback
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw err;
+    }
+
     if (cached) {
       return cached.usd;
     }
@@ -66,7 +72,7 @@ export async function getNativeTokenPrice(
     if (fallback !== undefined) {
       console.warn(
         `[Web3Settle] Using fallback price for ${coingeckoId}: $${fallback}`,
-        err instanceof Error ? err.message : err,
+        err instanceof Error ? err.message : String(err),
       );
       return fallback;
     }
@@ -77,21 +83,13 @@ export async function getNativeTokenPrice(
   }
 }
 
-/**
- * Stablecoin tokens always return $1.00.
- * For other ERC-20 tokens, extend this function with additional price feeds.
- */
 export function getTokenPrice(symbol: string): number {
-  const stablecoins = ['USDC', 'USDT', 'DAI', 'BUSD'];
-  if (stablecoins.includes(symbol.toUpperCase())) {
+  if (STABLECOIN_SYMBOLS.has(symbol.toUpperCase())) {
     return 1.0;
   }
   throw new Error(`No price feed available for token: ${symbol}`);
 }
 
-/**
- * Convert a USD amount to native token amount.
- */
 export async function usdToNativeAmount(
   usdAmount: number,
   chainId: number,
@@ -101,17 +99,11 @@ export async function usdToNativeAmount(
   return usdAmount / price;
 }
 
-/**
- * Convert a USD amount to token amount (handles stablecoins at 1:1).
- */
 export function usdToTokenAmount(usdAmount: number, tokenSymbol: string): number {
   const tokenPrice = getTokenPrice(tokenSymbol);
   return usdAmount / tokenPrice;
 }
 
-/**
- * Clear the entire price cache. Useful for testing.
- */
 export function clearPriceCache(): void {
   priceCache.clear();
 }

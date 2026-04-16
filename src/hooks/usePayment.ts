@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useWalletClient, usePublicClient, useSwitchChain } from 'wagmi';
 import { parseUnits } from 'viem';
-import { PaymentStatus, type ChainConfig } from '../core/types';
+import { PaymentStatus, NATIVE_TOKEN_SENTINEL, type ChainConfig, type TokenSelection } from '../core/types';
 import {
   executePayInNative,
   executePayInToken,
@@ -15,18 +15,20 @@ interface UsePaymentReturn {
   status: PaymentStatus;
   txHash: string | null;
   error: string | null;
-  startPayment: (amount: number, chain: ChainConfig, token: string | 'native') => Promise<void>;
+  startPayment: (amount: number, chain: ChainConfig, token: TokenSelection) => Promise<void>;
   reset: () => void;
 }
 
-/**
- * Hook managing the full payment lifecycle:
- * 1. Switch chain (if needed)
- * 2. Convert USD amount to token amount
- * 3. Approve ERC-20 (if token payment and insufficient allowance)
- * 4. Send transaction (payInNative or payInToken)
- * 5. Wait for on-chain confirmation
- */
+function classifyError(err: unknown): string {
+  if (err instanceof Error) {
+    const msg = err.message;
+    if (msg.includes('User rejected')) return 'Transaction rejected by user';
+    if (msg.includes('insufficient funds')) return 'Insufficient funds for this transaction';
+    return msg;
+  }
+  return 'An unexpected error occurred';
+}
+
 export function usePayment(): UsePaymentReturn {
   const [status, setStatus] = useState<PaymentStatus>(PaymentStatus.Idle);
   const [txHash, setTxHash] = useState<string | null>(null);
@@ -39,32 +41,32 @@ export function usePayment(): UsePaymentReturn {
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
+    abortRef.current = null;
     setStatus(PaymentStatus.Idle);
     setTxHash(null);
     setError(null);
   }, []);
 
   const startPayment = useCallback(
-    async (amount: number, chain: ChainConfig, token: string | 'native') => {
+    async (amount: number, chain: ChainConfig, token: TokenSelection): Promise<void> => {
       if (!walletClient) {
         setError('Wallet not connected');
         setStatus(PaymentStatus.Error);
         return;
       }
-
       if (!publicClient) {
         setError('Public client not available');
         setStatus(PaymentStatus.Error);
         return;
       }
 
-      abortRef.current = new AbortController();
+      const controller = new AbortController();
+      abortRef.current = controller;
       setStatus(PaymentStatus.Connecting);
       setTxHash(null);
       setError(null);
 
       try {
-        // Switch chain if necessary
         const currentChainId = await walletClient.getChainId();
         if (currentChainId !== chain.chainId) {
           await switchChainAsync({ chainId: chain.chainId });
@@ -72,14 +74,9 @@ export function usePayment(): UsePaymentReturn {
 
         const contractAddress = chain.contractAddress as `0x${string}`;
 
-        if (token === 'native') {
-          // Native payment flow
+        if (token === NATIVE_TOKEN_SENTINEL) {
           const nativeDecimals = chain.nativeCurrency?.decimals ?? 18;
-          const nativeAmount = await usdToNativeAmount(
-            amount,
-            chain.chainId,
-            abortRef.current.signal,
-          );
+          const nativeAmount = await usdToNativeAmount(amount, chain.chainId, controller.signal);
           const weiAmount = parseUnits(nativeAmount.toFixed(18), nativeDecimals);
 
           setStatus(PaymentStatus.Sending);
@@ -88,81 +85,67 @@ export function usePayment(): UsePaymentReturn {
 
           setStatus(PaymentStatus.Confirming);
           const receipt = await waitForReceipt(publicClient, hash, chain.confirmations);
-
           if (receipt.status === 'reverted') {
             throw new Error('Transaction reverted on-chain');
           }
-
           setStatus(PaymentStatus.Success);
-        } else {
-          // ERC-20 token payment flow
-          const tokenAddress = token as `0x${string}`;
-          const tokenConfig = chain.tokens.find((t) => t.address === token);
-          if (!tokenConfig) {
-            throw new Error(`Token ${token} not found in chain configuration`);
-          }
+          return;
+        }
 
-          const tokenAmount = usdToTokenAmount(amount, tokenConfig.symbol);
-          const rawAmount = parseUnits(tokenAmount.toFixed(tokenConfig.decimals), tokenConfig.decimals);
+        const tokenAddress = token as `0x${string}`;
+        const tokenConfig = chain.tokens.find((t) => t.address === token);
+        if (!tokenConfig) {
+          throw new Error(`Token ${token} not found in chain configuration`);
+        }
 
-          // Check allowance
-          const [ownerAddress] = await walletClient.getAddresses();
-          if (!ownerAddress) throw new Error('No wallet account connected');
+        const tokenAmount = usdToTokenAmount(amount, tokenConfig.symbol);
+        const rawAmount = parseUnits(
+          tokenAmount.toFixed(tokenConfig.decimals),
+          tokenConfig.decimals,
+        );
 
-          const currentAllowance = await checkAllowance(
-            publicClient,
-            tokenAddress,
-            ownerAddress,
-            contractAddress,
-          );
+        const [ownerAddress] = await walletClient.getAddresses();
+        if (!ownerAddress) throw new Error('No wallet account connected');
 
-          // Approve if needed
-          if (currentAllowance < rawAmount) {
-            setStatus(PaymentStatus.Approving);
-            const approveHash = await approveToken(
-              walletClient,
-              tokenAddress,
-              contractAddress,
-              rawAmount,
-            );
-            await waitForReceipt(publicClient, approveHash);
-          }
+        const currentAllowance = await checkAllowance(
+          publicClient,
+          tokenAddress,
+          ownerAddress,
+          contractAddress,
+        );
 
-          // Send payment
-          setStatus(PaymentStatus.Sending);
-          const hash = await executePayInToken(
+        if (currentAllowance < rawAmount) {
+          setStatus(PaymentStatus.Approving);
+          const approveHash = await approveToken(
             walletClient,
-            contractAddress,
             tokenAddress,
+            contractAddress,
             rawAmount,
           );
-          setTxHash(hash);
-
-          setStatus(PaymentStatus.Confirming);
-          const receipt = await waitForReceipt(publicClient, hash, chain.confirmations);
-
-          if (receipt.status === 'reverted') {
-            throw new Error('Transaction reverted on-chain');
-          }
-
-          setStatus(PaymentStatus.Success);
+          await waitForReceipt(publicClient, approveHash);
         }
+
+        setStatus(PaymentStatus.Sending);
+        const hash = await executePayInToken(
+          walletClient,
+          contractAddress,
+          tokenAddress,
+          rawAmount,
+        );
+        setTxHash(hash);
+
+        setStatus(PaymentStatus.Confirming);
+        const receipt = await waitForReceipt(publicClient, hash, chain.confirmations);
+        if (receipt.status === 'reverted') {
+          throw new Error('Transaction reverted on-chain');
+        }
+        setStatus(PaymentStatus.Success);
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') {
           setStatus(PaymentStatus.Idle);
           return;
         }
-
-        const message =
-          err instanceof Error
-            ? err.message.includes('User rejected')
-              ? 'Transaction rejected by user'
-              : err.message.includes('insufficient funds')
-                ? 'Insufficient funds for this transaction'
-                : err.message
-            : 'An unexpected error occurred';
-
-        setError(message);
+        setError(classifyError(err));
         setStatus(PaymentStatus.Error);
       }
     },

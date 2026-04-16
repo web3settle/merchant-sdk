@@ -166,11 +166,14 @@ describe('price-feed', () => {
 
   describe('clearPriceCache', () => {
     it('forces re-fetch after clearing', async () => {
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-        new Response(JSON.stringify({ ethereum: { usd: 3000 } }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(
+        () =>
+          Promise.resolve(
+            new Response(JSON.stringify({ ethereum: { usd: 3000 } }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          ),
       );
 
       await getNativeTokenPrice(1);

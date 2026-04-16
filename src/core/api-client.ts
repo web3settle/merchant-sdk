@@ -15,38 +15,38 @@ interface RequestOptions {
   signal?: AbortSignal;
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function assertValidStorefrontId(id: string): void {
+  if (!UUID_REGEX.test(id)) {
+    throw new Error(`Invalid storefrontId: must be a UUID, got "${id}"`);
+  }
+}
+
+function assertValidSessionId(id: string): void {
+  if (!UUID_REGEX.test(id)) {
+    throw new Error(`Invalid sessionId: must be a UUID`);
+  }
+}
+
 export class Web3SettleApiClient {
-  private readonly baseUrl: string;
+  private readonly baseUrl: URL;
   private readonly storefrontId: string;
 
   constructor(baseUrl: string, storefrontId: string) {
-    this.baseUrl = baseUrl.replace(/\/+$/, '');
+    assertValidStorefrontId(storefrontId);
+    this.baseUrl = new URL(baseUrl);
     this.storefrontId = storefrontId;
   }
 
-  /**
-   * Fetch payment configuration for the storefront.
-   * Returns supported chains, tokens, commission, etc.
-   */
   async fetchPaymentConfig(signal?: AbortSignal): Promise<PaymentConfig> {
     const raw = await this.request(
-      `/api/storefronts/${this.storefrontId}/payment-config`,
+      `api/storefronts/${this.storefrontId}/payment-config`,
       { signal },
     );
-    const result = PaymentConfigSchema.safeParse(raw);
-    if (!result.success) {
-      throw new Web3SettleApiError(
-        `Invalid payment config response: ${result.error.message}`,
-        0,
-        raw,
-      );
-    }
-    return result.data;
+    return this.parse(raw, PaymentConfigSchema, 'payment config');
   }
 
-  /**
-   * Create a new top-up session for a user.
-   */
   async createTopUpSession(
     userId: string,
     amount: number,
@@ -54,36 +54,34 @@ export class Web3SettleApiClient {
     signal?: AbortSignal,
   ): Promise<CreateSessionResponse> {
     const raw = await this.request(
-      `/api/storefronts/${this.storefrontId}/sessions`,
+      `api/storefronts/${this.storefrontId}/sessions`,
       {
         method: 'POST',
         body: { userId, amount, idempotencyKey },
         signal,
       },
     );
-    const result = CreateSessionResponseSchema.safeParse(raw);
-    if (!result.success) {
-      throw new Web3SettleApiError(
-        `Invalid session response: ${result.error.message}`,
-        0,
-        raw,
-      );
-    }
-    return result.data;
+    return this.parse(raw, CreateSessionResponseSchema, 'session');
   }
 
-  /**
-   * Poll for session status by ID.
-   */
   async getSessionStatus(sessionId: string, signal?: AbortSignal): Promise<PaymentSession> {
+    assertValidSessionId(sessionId);
     const raw = await this.request(
-      `/api/storefronts/${this.storefrontId}/sessions/${sessionId}`,
+      `api/storefronts/${this.storefrontId}/sessions/${sessionId}`,
       { signal },
     );
-    const result = PaymentSessionSchema.safeParse(raw);
+    return this.parse(raw, PaymentSessionSchema, 'session status');
+  }
+
+  private parse<T>(
+    raw: unknown,
+    schema: { safeParse: (v: unknown) => { success: true; data: T } | { success: false; error: { message: string } } },
+    kind: string,
+  ): T {
+    const result = schema.safeParse(raw);
     if (!result.success) {
       throw new Web3SettleApiError(
-        `Invalid session status response: ${result.error.message}`,
+        `Invalid ${kind} response: ${result.error.message}`,
         0,
         raw,
       );
@@ -91,15 +89,18 @@ export class Web3SettleApiClient {
     return result.data;
   }
 
-  /**
-   * Type-safe fetch wrapper with consistent error handling.
-   */
+  private buildUrl(path: string): string {
+    const base = this.baseUrl.toString().replace(/\/+$/, '');
+    const suffix = path.replace(/^\/+/, '');
+    return `${base}/${suffix}`;
+  }
+
   private async request(path: string, options: RequestOptions = {}): Promise<unknown> {
     const { method = 'GET', body, headers = {}, signal } = options;
 
-    const url = `${this.baseUrl}${path}`;
+    const url = this.buildUrl(path);
     const fetchHeaders: Record<string, string> = {
-      'Accept': 'application/json',
+      Accept: 'application/json',
       ...headers,
     };
 
@@ -125,9 +126,9 @@ export class Web3SettleApiClient {
       );
     }
 
+    const contentType = response.headers.get('content-type') ?? '';
     let responseBody: unknown;
-    const contentType = response.headers.get('content-type');
-    if (contentType?.includes('application/json')) {
+    if (contentType.includes('application/json')) {
       try {
         responseBody = await response.json();
       } catch {
@@ -141,8 +142,9 @@ export class Web3SettleApiClient {
       const message =
         typeof responseBody === 'object' &&
         responseBody !== null &&
-        'message' in responseBody
-          ? String((responseBody as Record<string, unknown>).message)
+        'message' in responseBody &&
+        typeof (responseBody as { message: unknown }).message === 'string'
+          ? (responseBody as { message: string }).message
           : `HTTP ${response.status}`;
       throw new Web3SettleApiError(message, response.status, responseBody);
     }
