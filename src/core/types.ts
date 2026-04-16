@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
-// ── Zod Schemas ──────────────────────────────────────────────────────────────
+const EVM_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 
 export const TokenConfigSchema = z.object({
-  address: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid ERC-20 address'),
+  address: z.string().regex(EVM_ADDRESS_REGEX, 'Invalid ERC-20 address'),
   symbol: z.string().min(1).max(10),
   decimals: z.number().int().min(0).max(18),
   minAmount: z.number().positive().optional(),
@@ -14,22 +14,24 @@ export const TokenConfigSchema = z.object({
 export const ChainConfigSchema = z.object({
   chainId: z.number().int().positive(),
   name: z.string().min(1),
-  contractAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid contract address'),
+  contractAddress: z.string().regex(EVM_ADDRESS_REGEX, 'Invalid contract address'),
   tokens: z.array(TokenConfigSchema),
   explorerUrl: z.string().url(),
   rpcUrl: z.string().url().optional(),
-  nativeCurrency: z.object({
-    name: z.string(),
-    symbol: z.string(),
-    decimals: z.number().int(),
-  }).optional(),
+  nativeCurrency: z
+    .object({
+      name: z.string(),
+      symbol: z.string(),
+      decimals: z.number().int(),
+    })
+    .optional(),
   iconUrl: z.string().url().optional(),
   confirmations: z.number().int().positive().optional(),
 });
 
 export const PaymentConfigSchema = z.object({
   chains: z.array(ChainConfigSchema).min(1),
-  commissionBps: z.number().int().min(0).max(10000),
+  commissionBps: z.number().int().min(0).max(10_000),
   storefrontId: z.string().uuid(),
 });
 
@@ -52,11 +54,7 @@ export const Web3SettleConfigSchema = z.object({
   apiBaseUrl: z.string().url(),
   storefrontId: z.string().uuid(),
   theme: z.enum(['dark', 'light']).optional().default('dark'),
-  onSuccess: z.function().args(z.any()).returns(z.void()).optional(),
-  onError: z.function().args(z.any()).returns(z.void()).optional(),
 });
-
-// ── TypeScript Types ─────────────────────────────────────────────────────────
 
 export type TokenConfig = z.infer<typeof TokenConfigSchema>;
 export type ChainConfig = z.infer<typeof ChainConfigSchema>;
@@ -65,15 +63,12 @@ export type PaymentSession = z.infer<typeof PaymentSessionSchema>;
 export type CreateSessionResponse = z.infer<typeof CreateSessionResponseSchema>;
 
 export interface Web3SettleConfig {
-  /** API base URL. */
   apiBaseUrl: string;
   storefrontId: string;
   theme?: 'dark' | 'light';
   onSuccess?: (session: PaymentSession) => void;
   onError?: (error: Error) => void;
 }
-
-// ── Payment Status ───────────────────────────────────────────────────────────
 
 export enum PaymentStatus {
   Idle = 'idle',
@@ -85,10 +80,13 @@ export enum PaymentStatus {
   Error = 'error',
 }
 
-// ── Component Props ──────────────────────────────────────────────────────────
-
 export type ButtonVariant = 'primary' | 'outline' | 'ghost';
 export type ButtonSize = 'sm' | 'md' | 'lg';
+
+export const NATIVE_TOKEN_SENTINEL = 'native' as const;
+// `string & {}` keeps the literal `"native"` as an editor suggestion while still accepting any
+// address string at runtime. The intersection prevents TS from collapsing the union.
+export type TokenSelection = typeof NATIVE_TOKEN_SENTINEL | (string & Record<never, never>);
 
 export interface PayButtonProps {
   amount: number;
@@ -116,7 +114,7 @@ export interface TokenSelectorProps {
   tokens: TokenConfig[];
   nativeCurrency?: { name: string; symbol: string; decimals: number };
   selectedToken: string | null;
-  onSelect: (tokenAddress: string | 'native') => void;
+  onSelect: (tokenAddress: TokenSelection) => void;
   walletAddress?: string;
   chainId?: number;
 }
@@ -132,15 +130,14 @@ export interface WalletConnectProps {
   onConnected?: (address: string) => void;
 }
 
-// ── API Error ────────────────────────────────────────────────────────────────
-
 export class Web3SettleApiError extends Error {
-  constructor(
-    message: string,
-    public readonly statusCode: number,
-    public readonly responseBody?: unknown,
-  ) {
+  public readonly statusCode: number;
+  public readonly responseBody?: unknown;
+
+  constructor(message: string, statusCode: number, responseBody?: unknown) {
     super(message);
     this.name = 'Web3SettleApiError';
+    this.statusCode = statusCode;
+    this.responseBody = responseBody;
   }
 }

@@ -1,12 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { formatUnits } from 'viem';
 import { usePublicClient } from 'wagmi';
-import type { TokenSelectorProps } from '../core/types';
+import type { TokenSelectorProps, TokenSelection } from '../core/types';
+import { NATIVE_TOKEN_SENTINEL } from '../core/types';
 import { getTokenBalance } from '../core/contract';
 import { getTokenPrice } from '../core/price-feed';
 
 interface TokenWithBalance {
-  address: string;
+  address: TokenSelection;
   symbol: string;
   decimals: number;
   balance: string | null;
@@ -26,17 +27,17 @@ export function TokenSelector({
   const publicClient = usePublicClient({ chainId });
   const [tokenBalances, setTokenBalances] = useState<TokenWithBalance[]>([]);
   const [loading, setLoading] = useState(false);
+  const headingId = useId();
 
   useEffect(() => {
     let cancelled = false;
 
-    async function fetchBalances() {
+    const fetchBalances = async (): Promise<void> => {
       const items: TokenWithBalance[] = [];
 
-      // Add native currency option
       if (nativeCurrency) {
         items.push({
-          address: 'native',
+          address: NATIVE_TOKEN_SENTINEL,
           symbol: nativeCurrency.symbol,
           decimals: nativeCurrency.decimals,
           balance: null,
@@ -45,7 +46,6 @@ export function TokenSelector({
         });
       }
 
-      // Add ERC-20 tokens
       for (const token of tokens) {
         items.push({
           address: token.address,
@@ -65,7 +65,6 @@ export function TokenSelector({
 
       setLoading(true);
 
-      // Fetch native balance
       if (nativeCurrency) {
         try {
           const nativeBal = await publicClient.getBalance({
@@ -77,21 +76,21 @@ export function TokenSelector({
             nativeItem.balance = Number(formatted).toFixed(6);
           }
         } catch {
-          // Balance fetch failed — show without balance
+          // Balance fetch failed — show entry without balance
         }
       }
 
-      // Fetch ERC-20 balances in parallel
-      const balancePromises = tokens.map(async (token) => {
-        try {
-          const bal = await getTokenBalance(
-            publicClient,
-            token.address as `0x${string}`,
-            walletAddress as `0x${string}`,
-          );
-          const formatted = formatUnits(bal, token.decimals);
-          const item = items.find((i) => i.address === token.address);
-          if (item) {
+      await Promise.allSettled(
+        tokens.map(async (token) => {
+          try {
+            const bal = await getTokenBalance(
+              publicClient,
+              token.address as `0x${string}`,
+              walletAddress as `0x${string}`,
+            );
+            const formatted = formatUnits(bal, token.decimals);
+            const item = items.find((i) => i.address === token.address);
+            if (!item) return;
             item.balance = Number(formatted).toFixed(token.decimals <= 6 ? 2 : 6);
             try {
               const price = getTokenPrice(token.symbol);
@@ -99,31 +98,33 @@ export function TokenSelector({
             } catch {
               // No price feed for this token
             }
+          } catch {
+            // Balance fetch failed — show entry without balance
           }
-        } catch {
-          // Balance fetch failed — show without balance
-        }
-      });
-
-      await Promise.allSettled(balancePromises);
+        }),
+      );
 
       if (!cancelled) {
         setTokenBalances(items);
         setLoading(false);
       }
-    }
+    };
 
-    fetchBalances();
+    void fetchBalances();
     return () => {
       cancelled = true;
     };
   }, [tokens, nativeCurrency, walletAddress, publicClient, chainId]);
 
   return (
-    <div className="w3s-flex w3s-flex-col w3s-gap-2">
-      <label className="w3s-text-sm w3s-font-medium w3s-text-slate-300">
+    <div
+      role="radiogroup"
+      aria-labelledby={headingId}
+      className="w3s-flex w3s-flex-col w3s-gap-2"
+    >
+      <div id={headingId} className="w3s-text-sm w3s-font-medium w3s-text-slate-300">
         Select Token
-      </label>
+      </div>
       <div className="w3s-flex w3s-flex-col w3s-gap-2">
         {tokenBalances.map((token) => {
           const isSelected = selectedToken === token.address;
@@ -131,7 +132,9 @@ export function TokenSelector({
             <button
               key={token.address}
               type="button"
-              onClick={() => onSelect(token.address as 'native' | `0x${string}`)}
+              role="radio"
+              aria-checked={isSelected}
+              onClick={() => { onSelect(token.address); }}
               className={`
                 w3s-flex w3s-items-center w3s-justify-between
                 w3s-rounded-xl w3s-border w3s-p-3
@@ -147,14 +150,16 @@ export function TokenSelector({
                 {token.iconUrl ? (
                   <img
                     src={token.iconUrl}
-                    alt={token.symbol}
+                    alt=""
+                    aria-hidden="true"
                     className="w3s-h-7 w3s-w-7 w3s-rounded-full"
                     onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
+                      e.currentTarget.style.display = 'none';
                     }}
                   />
                 ) : (
                   <div
+                    aria-hidden="true"
                     className="
                       w3s-flex w3s-h-7 w3s-w-7 w3s-items-center w3s-justify-center
                       w3s-rounded-full w3s-bg-indigo-500/20 w3s-text-xs w3s-font-bold
@@ -180,11 +185,11 @@ export function TokenSelector({
                 ) : token.balance !== null ? (
                   <>
                     <span className="w3s-text-sm w3s-text-white">{token.balance}</span>
-                    {token.usdValue && (
+                    {token.usdValue ? (
                       <span className="w3s-text-xs w3s-text-slate-400">
                         ${token.usdValue}
                       </span>
-                    )}
+                    ) : null}
                   </>
                 ) : (
                   <span className="w3s-text-xs w3s-text-slate-500">--</span>

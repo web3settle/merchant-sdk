@@ -1,14 +1,14 @@
-import React, { useState, useCallback } from 'react';
-import type { PayButtonProps } from '../core/types';
+import { useState, useCallback } from 'react';
+import type { PayButtonProps, ButtonSize, ButtonVariant } from '../core/types';
 import { Web3SettleTopUpModal } from './TopUpModal';
 
-const SIZE_CLASSES: Record<string, string> = {
+const SIZE_CLASSES: Record<ButtonSize, string> = {
   sm: 'w3s-px-4 w3s-py-2 w3s-text-sm',
   md: 'w3s-px-6 w3s-py-3 w3s-text-base',
   lg: 'w3s-px-8 w3s-py-4 w3s-text-lg',
 };
 
-const VARIANT_CLASSES: Record<string, string> = {
+const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary: `
     w3s-bg-indigo-600 w3s-text-white w3s-border-transparent
     hover:w3s-bg-indigo-500 hover:w3s-shadow-[0_0_20px_rgba(99,102,241,0.3)]
@@ -28,7 +28,7 @@ const VARIANT_CLASSES: Record<string, string> = {
 
 function CryptoIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 20 20" fill="currentColor">
+    <svg className={className} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
       <path d="M10 2a8 8 0 100 16 8 8 0 000-16zM8.5 7.5a1.5 1.5 0 113 0v.25H13v1.5h-1.5V11h1v1.5h-1v1H10v-1H8.5v-1.5H10V9.25H8.5V7.75H7v-1.5h1.5V7.5z" />
     </svg>
   );
@@ -54,9 +54,6 @@ export function Web3SettlePayButton({
     setIsModalOpen(false);
   }, []);
 
-  const sizeClass = SIZE_CLASSES[size] ?? SIZE_CLASSES.md;
-  const variantClass = VARIANT_CLASSES[variant] ?? VARIANT_CLASSES.primary;
-
   return (
     <>
       <button
@@ -69,8 +66,8 @@ export function Web3SettlePayButton({
           w3s-font-semibold
           w3s-transition-all w3s-duration-200 w3s-cursor-pointer
           disabled:w3s-cursor-not-allowed disabled:w3s-opacity-40
-          ${sizeClass}
-          ${variantClass}
+          ${SIZE_CLASSES[size]}
+          ${VARIANT_CLASSES[variant]}
           ${className}
         `}
       >

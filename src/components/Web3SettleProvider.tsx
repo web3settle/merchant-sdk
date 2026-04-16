@@ -1,12 +1,10 @@
-import React, { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WagmiProvider, createConfig, http, type CreateConnectorFn } from 'wagmi';
 import { mainnet, polygon, base } from 'wagmi/chains';
 import { injected, walletConnect } from 'wagmi/connectors';
 import type { Web3SettleConfig } from '../core/types';
 import { Web3SettleApiClient } from '../core/api-client';
-
-// ── SDK Context ──────────────────────────────────────────────────────────────
 
 export interface Web3SettleContextValue {
   config: Web3SettleConfig;
@@ -26,18 +24,12 @@ export function useWeb3SettleContext(): Web3SettleContextValue {
   return ctx;
 }
 
-// ── Provider Props ───────────────────────────────────────────────────────────
-
 interface Web3SettleProviderProps {
   config: Web3SettleConfig;
   children: ReactNode;
-  /** Optional WalletConnect project ID for WalletConnect v2. */
   walletConnectProjectId?: string;
-  /** Provide your own QueryClient if you already have one in your app. */
   queryClient?: QueryClient;
 }
-
-// ── Provider Component ───────────────────────────────────────────────────────
 
 export function Web3SettleProvider({
   config,
@@ -62,9 +54,7 @@ export function Web3SettleProvider({
   const wagmiConfig = useMemo(() => {
     const connectors: CreateConnectorFn[] = [injected()];
     if (walletConnectProjectId) {
-      connectors.push(
-        walletConnect({ projectId: walletConnectProjectId }) as CreateConnectorFn,
-      );
+      connectors.push(walletConnect({ projectId: walletConnectProjectId }));
     }
 
     return createConfig({
