@@ -1,7 +1,7 @@
 {
   "name": "@web3settle/merchant-sdk",
-  "version": "0.2.0",
-  "description": "React SDK for accepting crypto payments via Web3Settle",
+  "version": "0.4.0",
+  "description": "React SDK for accepting crypto payments via Web3Settle (EVM + Solana + TRON)",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -14,6 +14,16 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./solana": {
+      "types": "./dist/solana.d.ts",
+      "import": "./dist/solana.js",
+      "require": "./dist/solana.cjs"
+    },
+    "./tron": {
+      "types": "./dist/tron.d.ts",
+      "import": "./dist/tron.js",
+      "require": "./dist/tron.cjs"
     },
     "./styles.css": "./dist/styles.css"
   },
@@ -38,18 +48,36 @@
     "prepublishOnly": "npm run typecheck && npm run lint && npm run test && npm run build"
   },
   "peerDependencies": {
+    "@solana/wallet-adapter-base": "^0.9.0",
+    "@solana/wallet-adapter-react": "^0.15.0",
+    "@solana/web3.js": "^1.98.0",
     "@tanstack/react-query": "^5.62.0",
     "@wagmi/core": "^2.16.0",
     "react": "^18.0.0 || ^19.0.0",
     "react-dom": "^18.0.0 || ^19.0.0",
+    "tronweb": "^6.0.0",
     "viem": "^2.21.0",
     "wagmi": "^2.14.0"
   },
+  "peerDependenciesMeta": {
+    "@solana/wallet-adapter-base": { "optional": true },
+    "@solana/wallet-adapter-react": { "optional": true },
+    "@solana/web3.js": { "optional": true },
+    "@wagmi/core": { "optional": true },
+    "tronweb": { "optional": true },
+    "viem": { "optional": true },
+    "wagmi": { "optional": true }
+  },
   "dependencies": {
+    "i18next": "^25.10.10",
+    "react-i18next": "^16.6.6",
     "zod": "^3.25.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@solana/wallet-adapter-base": "^0.9.27",
+    "@solana/wallet-adapter-react": "^0.15.39",
+    "@solana/web3.js": "^1.98.4",
     "@tanstack/react-query": "^5.62.0",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.1.0",
@@ -72,6 +100,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwindcss": "^3.4.17",
+    "tronweb": "^6.0.0",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.0",
     "viem": "^2.21.0",
@@ -92,7 +121,7 @@
     "access": "public",
     "provenance": true
   },
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/web3settle/merchant-sdk.git"
@@ -111,6 +140,9 @@
     "ethereum",
     "polygon",
     "base",
+    "solana",
+    "tron",
+    "trx",
     "wagmi",
     "viem"
   ]

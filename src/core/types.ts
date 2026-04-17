@@ -1,9 +1,13 @@
 import { z } from 'zod';
 
-const EVM_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+// Accept EVM hex (0x + 40 hex), Solana base58 (32–44 chars), and TRON base58 (T + 33 chars).
+// Per-pipeline validators in src/solana/ and src/tron/ tighten this at construction time.
+const CROSS_CHAIN_ADDRESS_REGEX = /^(0x[a-fA-F0-9]{40}|T[1-9A-HJ-NP-Za-km-z]{33}|[1-9A-HJ-NP-Za-km-z]{32,44})$/;
 
 export const TokenConfigSchema = z.object({
-  address: z.string().regex(EVM_ADDRESS_REGEX, 'Invalid ERC-20 address'),
+  // Allow EVM, Solana mint (base58), or TRON T-address. Per-pipeline modules
+  // re-validate tightly at call time.
+  address: z.string().regex(CROSS_CHAIN_ADDRESS_REGEX, 'Invalid token address'),
   symbol: z.string().min(1).max(10),
   decimals: z.number().int().min(0).max(18),
   minAmount: z.number().positive().optional(),
@@ -14,7 +18,7 @@ export const TokenConfigSchema = z.object({
 export const ChainConfigSchema = z.object({
   chainId: z.number().int().positive(),
   name: z.string().min(1),
-  contractAddress: z.string().regex(EVM_ADDRESS_REGEX, 'Invalid contract address'),
+  contractAddress: z.string().regex(CROSS_CHAIN_ADDRESS_REGEX, 'Invalid contract address'),
   tokens: z.array(TokenConfigSchema),
   explorerUrl: z.string().url(),
   rpcUrl: z.string().url().optional(),

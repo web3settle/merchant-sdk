@@ -1,0 +1,96 @@
+{
+  "payButton": {
+    "default": "Pay ${{amount}}",
+    "label": "Pay with crypto"
+  },
+  "modal": {
+    "title": "Top Up",
+    "enterAmount": "Enter Amount",
+    "connectWallet": "Connect Wallet",
+    "selectPayment": "Select Payment",
+    "reviewPayment": "Review Payment",
+    "processing": "Processing",
+    "complete": "Complete",
+    "failed": "Failed",
+    "amountUsd": "Amount (USD)",
+    "continue": "Continue",
+    "reviewButton": "Review Payment",
+    "confirmButton": "Confirm Payment",
+    "done": "Done",
+    "tryAgain": "Try Again",
+    "close": "Close",
+    "back": "Back"
+  },
+  "wallet": {
+    "connect": "Connect Wallet",
+    "connecting": "Connecting…",
+    "connected": "Connected",
+    "disconnect": "Disconnect",
+    "rejected": "Connection rejected by user"
+  },
+  "chain": {
+    "select": "Select Network",
+    "tokensCount_one": "{{count}} token",
+    "tokensCount_other": "{{count}} tokens"
+  },
+  "token": {
+    "select": "Select Token",
+    "native": "Native"
+  },
+  "status": {
+    "sending": "Sending transaction",
+    "confirming": "Confirming on-chain",
+    "success": "Payment confirmed",
+    "txFailed": "Transaction Failed",
+    "paymentSuccessful": "Payment Successful",
+    "paymentSuccessBody": "Your transaction has been confirmed on-chain.",
+    "viewOnExplorer": "View on Explorer",
+    "viewTxOnExplorer": "View transaction on explorer",
+    "unexpectedError": "An unexpected error occurred"
+  },
+  "errors": {
+    "rejected": "Transaction rejected by user",
+    "insufficientFunds": "Insufficient funds for this transaction",
+    "noWallet": "Wallet not connected",
+    "tokenNotFound": "Token {{token}} not found in chain configuration",
+    "reverted": "Transaction reverted on-chain"
+  },
+  "branding": {
+    "poweredBy": "Powered by",
+    "brand": "Web3Settle"
+  },
+  "solana": {
+    "wallet": {
+      "connect": "Connect Solana Wallet",
+      "noAdapters": "No Solana wallet adapters registered. Pass them via wallets={...} on SolanaWeb3SettleProvider.",
+      "ready": "Ready",
+      "installed": "Installed",
+      "loadable": "Loadable",
+      "notDetected": "Not detected",
+      "unsupported": "Unsupported"
+    },
+    "errors": {
+      "notConnected": "Wallet not connected",
+      "missingSendTransaction": "Wallet adapter does not expose sendTransaction",
+      "receiptFailed": "Solana receipt wait failed"
+    }
+  },
+  "tron": {
+    "wallet": {
+      "connect": "Connect TRON Wallet",
+      "connecting": "Connecting…",
+      "installPrompt": "TronLink is not installed.",
+      "installAction": "Install it",
+      "reloadHint": "and reload this page.",
+      "locked": "TRON wallet is locked. Unlock it and try again."
+    },
+    "errors": {
+      "notAvailable": "TronLink (or compatible TRON wallet) is not available.",
+      "allowanceFailed": "Failed to read TRC-20 allowance",
+      "approveFailed": "TRC-20 approve failed",
+      "payinFailed": "TRON pay-in failed",
+      "timeout": "TRON transaction did not confirm within 90 s",
+      "invalidAddress": "Invalid TRON address"
+    }
+  }
+}
