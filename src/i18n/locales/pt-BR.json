@@ -1,0 +1,96 @@
+{
+  "payButton": {
+    "default": "Pagar US$ {{amount}}",
+    "label": "Pagar com cripto"
+  },
+  "modal": {
+    "title": "Recarga",
+    "enterAmount": "Informe o valor",
+    "connectWallet": "Conectar carteira",
+    "selectPayment": "Selecione a forma de pagamento",
+    "reviewPayment": "Revisar pagamento",
+    "processing": "Processando",
+    "complete": "Concluído",
+    "failed": "Falhou",
+    "amountUsd": "Valor (USD)",
+    "continue": "Continuar",
+    "reviewButton": "Revisar pagamento",
+    "confirmButton": "Confirmar pagamento",
+    "done": "Pronto",
+    "tryAgain": "Tentar novamente",
+    "close": "Fechar",
+    "back": "Voltar"
+  },
+  "wallet": {
+    "connect": "Conectar carteira",
+    "connecting": "Conectando…",
+    "connected": "Conectado",
+    "disconnect": "Desconectar",
+    "rejected": "Conexão rejeitada pelo usuário"
+  },
+  "chain": {
+    "select": "Selecionar rede",
+    "tokensCount_one": "{{count}} token",
+    "tokensCount_other": "{{count}} tokens"
+  },
+  "token": {
+    "select": "Selecionar token",
+    "native": "Nativo"
+  },
+  "status": {
+    "sending": "Enviando transação",
+    "confirming": "Confirmando on-chain",
+    "success": "Pagamento confirmado",
+    "txFailed": "Transação falhou",
+    "paymentSuccessful": "Pagamento realizado",
+    "paymentSuccessBody": "Sua transação foi confirmada on-chain.",
+    "viewOnExplorer": "Ver no Explorer",
+    "viewTxOnExplorer": "Ver transação no explorer",
+    "unexpectedError": "Ocorreu um erro inesperado"
+  },
+  "errors": {
+    "rejected": "Transação rejeitada pelo usuário",
+    "insufficientFunds": "Saldo insuficiente para esta transação",
+    "noWallet": "Carteira não conectada",
+    "tokenNotFound": "Token {{token}} não encontrado na configuração de rede",
+    "reverted": "Transação revertida on-chain"
+  },
+  "branding": {
+    "poweredBy": "Desenvolvido por",
+    "brand": "Web3Settle"
+  },
+  "solana": {
+    "wallet": {
+      "connect": "Conectar carteira Solana",
+      "noAdapters": "Nenhum adaptador de carteira Solana registrado. Passe-os via wallets={...} em SolanaWeb3SettleProvider.",
+      "ready": "Pronto",
+      "installed": "Instalado",
+      "loadable": "Disponível",
+      "notDetected": "Não detectado",
+      "unsupported": "Não suportado"
+    },
+    "errors": {
+      "notConnected": "Carteira não conectada",
+      "missingSendTransaction": "O adaptador de carteira não expõe sendTransaction",
+      "receiptFailed": "Falha ao aguardar o recibo na Solana"
+    }
+  },
+  "tron": {
+    "wallet": {
+      "connect": "Conectar carteira TRON",
+      "connecting": "Conectando…",
+      "installPrompt": "TronLink não está instalado.",
+      "installAction": "Instale-o",
+      "reloadHint": "e recarregue esta página.",
+      "locked": "Carteira TRON está bloqueada. Desbloqueie e tente novamente."
+    },
+    "errors": {
+      "notAvailable": "TronLink (ou carteira TRON compatível) não está disponível.",
+      "allowanceFailed": "Falha ao consultar allowance TRC-20",
+      "approveFailed": "Aprovação TRC-20 falhou",
+      "payinFailed": "Pagamento TRON falhou",
+      "timeout": "A transação TRON não foi confirmada em 90 s",
+      "invalidAddress": "Endereço TRON inválido"
+    }
+  }
+}

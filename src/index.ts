@@ -70,4 +70,16 @@ export type {
   ButtonSize,
 } from './core/types';
 
+// ── i18n (opt-in) ────────────────────────────────────────────────────────────
+// Consumers who use i18next can inject SDK strings into their own instance via
+// addSdkResourcesTo(i18n); or use ensureSdkI18n() to get a standalone instance.
+export {
+  SUPPORTED_LOCALES,
+  LOCALE_LABELS,
+  SDK_NAMESPACE,
+  ensureSdkI18n,
+  addSdkResourcesTo,
+} from './i18n';
+export type { SupportedLocale } from './i18n';
+
 // ── Styles (import separately: import '@web3settle/merchant-sdk/styles.css') ─

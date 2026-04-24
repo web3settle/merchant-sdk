@@ -5,6 +5,30 @@ All notable changes to `@web3settle/merchant-sdk` will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-04-17
+
+### Added
+
+- **Solana subpath** (`@web3settle/merchant-sdk/solana`): `SolanaWeb3SettleProvider`, `SolanaPayButton`, `SolanaTopUpModal`, `SolanaWalletConnect`, `useSolanaPayment`, `useSolanaPipeline`, `SolanaPaymentPipeline`. Payment flow via `@solana/wallet-adapter-react` + `@solana/web3.js`; supports native SOL and any SPL token the merchant whitelists. PDA derivation helpers (`deriveConfigPda`, `deriveSolVaultPda`, `deriveTokenTotalsPda`, `hexToBytes32`) and raw instruction builders (`buildPayInNativeInstruction`, `buildPayInTokenInstruction`) exported for advanced flows. No `@coral-xyz/anchor` dependency — the SDK hand-rolls the Anchor discriminators.
+- **TRON subpath** (`@web3settle/merchant-sdk/tron`): `TronWeb3SettleProvider`, `TronPayButton`, `TronTopUpModal`, `TronWalletConnect`, `useTronPayment`, `useTronPipeline`, `TronPaymentPipeline`. Uses TronLink's injected `window.tronWeb` at runtime; TRC-20 approve + pay flow, `SafeTRC20`-aware (tolerates non-return-value tokens like USDT-TRON). `feeLimit` configurable per provider.
+- **Common `PaymentPipeline` interface** (exported from root): unified `quoteAmount` / `needsApproval` / `approve` / `execute` / `waitForReceipt` surface across EVM, Solana, and TRON. `PaymentPipelineError` with normalised `PaymentErrorKind` values (`user-rejected`, `insufficient-funds`, `wrong-network`, `reverted`, `timeout`, `unknown`).
+- **i18n keys**: `solana.*` and `tron.*` namespaces in every shipped locale (`en`, `pt-BR`).
+- **Tests**: Solana PDA + instruction-builder tests (pinned to node environment — see inline note for why); TRON pipeline tests with mocked TronWeb.
+- New peer dependencies (optional, enforced per subpath): `@solana/web3.js`, `@solana/wallet-adapter-base`, `@solana/wallet-adapter-react`, `tronweb` (types-only).
+
+### Changed
+
+- **[BREAKING — for validation]** `ChainConfig.contractAddress` and `TokenConfig.address` now accept EVM hex, Solana base58, **and** TRON T-addresses. Each pipeline re-validates the format it needs at call time. Consumers who pinned their own Zod schemas to the old EVM-only regex should swap to the cross-chain one exported from the SDK.
+- Subpath-aware multi-entry build: `dist/index.{js,cjs}` (EVM), `dist/solana.{js,cjs}`, `dist/tron.{js,cjs}`, plus a shared chunk for the `ChainSelector` / `TokenSelector` / `TransactionStatus` components.
+- Updated `package.json` `exports` map with `./solana` and `./tron` conditional exports.
+
+## [0.3.0] - 2026-04-17
+
+### Changed
+
+- **[BREAKING — LICENSE]** The SDK is no longer distributed under the MIT License. Effective this version the SDK is licensed under the **Web3Settle Software License** (proprietary, non-transferable, non-sublicensable). The full terms are in [LICENSE](./LICENSE); an industry-standard security-disclosure policy is in [SECURITY.md](./SECURITY.md). Existing consumers of prior versions are unaffected for those prior versions; all new installs and upgrades of this package from 0.3.0 onwards are subject to the new license.
+- `package.json` `license` field updated from `"MIT"` to `"SEE LICENSE IN LICENSE"`.
+
 ## [0.2.0] - 2026-04-16
 
 ### Security
