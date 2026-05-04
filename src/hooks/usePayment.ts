@@ -11,11 +11,27 @@ import {
 } from '../core/contract';
 import { usdToNativeAmount, usdToTokenAmount } from '../core/price-feed';
 
+interface StartPaymentOptions {
+  /**
+   * Pre-fetched atomic token amount (smallest unit, decimal string) from the server-side
+   * <c>/quote</c> endpoint. When provided, the hook skips its own CoinGecko-based conversion
+   * and signs exactly this number — the chain-of-trust runs server → SDK → wallet. The legacy
+   * client-side price-feed path remains as the fallback for non-EVM chains and for any caller
+   * that hasn't been migrated to the quote endpoint.
+   */
+  atomicAmount?: string;
+}
+
 interface UsePaymentReturn {
   status: PaymentStatus;
   txHash: string | null;
   error: string | null;
-  startPayment: (amount: number, chain: ChainConfig, token: TokenSelection) => Promise<void>;
+  startPayment: (
+    amount: number,
+    chain: ChainConfig,
+    token: TokenSelection,
+    opts?: StartPaymentOptions,
+  ) => Promise<void>;
   reset: () => void;
 }
 
@@ -48,7 +64,12 @@ export function usePayment(): UsePaymentReturn {
   }, []);
 
   const startPayment = useCallback(
-    async (amount: number, chain: ChainConfig, token: TokenSelection): Promise<void> => {
+    async (
+      amount: number,
+      chain: ChainConfig,
+      token: TokenSelection,
+      opts: StartPaymentOptions = {},
+    ): Promise<void> => {
       if (!walletClient) {
         setError('Wallet not connected');
         setStatus(PaymentStatus.Error);
@@ -76,8 +97,15 @@ export function usePayment(): UsePaymentReturn {
 
         if (token === NATIVE_TOKEN_SENTINEL) {
           const nativeDecimals = chain.nativeCurrency?.decimals ?? 18;
-          const nativeAmount = await usdToNativeAmount(amount, chain.chainId, controller.signal);
-          const weiAmount = parseUnits(nativeAmount.toFixed(18), nativeDecimals);
+          let weiAmount: bigint;
+          if (opts.atomicAmount) {
+            // Server quote: trust the atomic amount verbatim.
+            weiAmount = BigInt(opts.atomicAmount);
+          } else {
+            // Legacy CoinGecko path — kept for tests and pre-quote callers.
+            const nativeAmount = await usdToNativeAmount(amount, chain.chainId, controller.signal);
+            weiAmount = parseUnits(nativeAmount.toFixed(18), nativeDecimals);
+          }
 
           setStatus(PaymentStatus.Sending);
           const hash = await executePayInNative(walletClient, contractAddress, weiAmount);
@@ -98,11 +126,16 @@ export function usePayment(): UsePaymentReturn {
           throw new Error(`Token ${token} not found in chain configuration`);
         }
 
-        const tokenAmount = usdToTokenAmount(amount, tokenConfig.symbol);
-        const rawAmount = parseUnits(
-          tokenAmount.toFixed(tokenConfig.decimals),
-          tokenConfig.decimals,
-        );
+        let rawAmount: bigint;
+        if (opts.atomicAmount) {
+          rawAmount = BigInt(opts.atomicAmount);
+        } else {
+          const tokenAmount = usdToTokenAmount(amount, tokenConfig.symbol);
+          rawAmount = parseUnits(
+            tokenAmount.toFixed(tokenConfig.decimals),
+            tokenConfig.decimals,
+          );
+        }
 
         const [ownerAddress] = await walletClient.getAddresses();
         if (!ownerAddress) throw new Error('No wallet account connected');

@@ -4,6 +4,7 @@ import type { TokenConfig, TokenSelection, TopUpModalProps } from '../core/types
 import { NATIVE_TOKEN_SENTINEL, PaymentStatus } from '../core/types';
 import { useWeb3SettleContext } from './Web3SettleProvider';
 import { usePayment } from '../hooks/usePayment';
+import { useQuote } from '../hooks/useQuote';
 import { useWeb3Settle } from '../hooks/useWeb3Settle';
 import { ChainSelector } from './ChainSelector';
 import { TokenSelector } from './TokenSelector';
@@ -73,6 +74,22 @@ export function Web3SettleTopUpModal({
       ? (selectedChain?.tokens.find((t) => t.address === selectedToken) ?? null)
       : null;
   const isNativePayment = selectedToken === NATIVE_TOKEN_SENTINEL;
+
+  // Fetch the server-issued Chainlink quote whenever we have a chain + token + amount. Keeps
+  // refreshing every 30s while the user lingers on review so the displayed amount is as fresh
+  // as the most recent feed update.
+  const parsedAmountForQuote = parseFloat(amount);
+  const quoteToken = isNativePayment ? 'native' : (selectedToken ?? null);
+  const {
+    quote,
+    isLoading: quoteLoading,
+    error: quoteError,
+  } = useQuote(
+    selectedChain?.name ?? null,
+    quoteToken,
+    Number.isFinite(parsedAmountForQuote) && parsedAmountForQuote > 0 ? parsedAmountForQuote : null,
+    { enabled: step === 'review' || step === 'token' },
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -174,8 +191,12 @@ export function Web3SettleTopUpModal({
 
   const handleConfirm = useCallback(() => {
     if (!selectedChain || !selectedToken) return;
-    void startPayment(Number(amount), selectedChain, selectedToken);
-  }, [amount, selectedChain, selectedToken, startPayment]);
+    // Pass the server's atomic quote through so the wallet signs exactly what the user saw,
+    // rather than re-running a CoinGecko-based conversion that could disagree with the quote.
+    void startPayment(Number(amount), selectedChain, selectedToken, {
+      atomicAmount: quote?.amountToken,
+    });
+  }, [amount, selectedChain, selectedToken, startPayment, quote]);
 
   const handleBack = useCallback(() => {
     switch (step) {
@@ -397,6 +418,27 @@ export function Web3SettleTopUpModal({
                             : selectedTokenConfig?.symbol}
                         </span>
                       </div>
+                      <div className="w3s-flex w3s-justify-between w3s-border-t w3s-border-white/10 w3s-pt-3">
+                        <span className="w3s-text-sm w3s-text-slate-400">You'll send</span>
+                        <span className="w3s-text-right">
+                          {quote ? (
+                            <>
+                              <span className="w3s-block w3s-text-base w3s-font-semibold w3s-text-white">
+                                {quote.amountTokenDisplay.toFixed(Math.min(8, quote.tokenDecimals))} {quote.tokenSymbol}
+                              </span>
+                              <span className="w3s-block w3s-text-[11px] w3s-text-slate-500 w3s-font-mono">
+                                @ ${quote.priceUsd.toFixed(6)} / {quote.tokenSymbol} · Chainlink
+                              </span>
+                            </>
+                          ) : quoteLoading ? (
+                            <span className="w3s-text-sm w3s-text-slate-500">Pricing…</span>
+                          ) : quoteError ? (
+                            <span className="w3s-text-sm w3s-text-red-400">{quoteError}</span>
+                          ) : (
+                            <span className="w3s-text-sm w3s-text-slate-500">—</span>
+                          )}
+                        </span>
+                      </div>
                       <div className="w3s-flex w3s-justify-between">
                         <span className="w3s-text-sm w3s-text-slate-400">Wallet</span>
                         <span className="w3s-text-sm w3s-font-mono w3s-text-white">
@@ -419,14 +461,16 @@ export function Web3SettleTopUpModal({
                   <button
                     type="button"
                     onClick={handleConfirm}
+                    disabled={!quote || quoteLoading || !!quoteError}
                     className="
                       w3s-w-full w3s-rounded-xl w3s-bg-indigo-600 w3s-py-3
                       w3s-text-sm w3s-font-semibold w3s-text-white
                       w3s-transition-all w3s-duration-200 w3s-cursor-pointer
                       hover:w3s-bg-indigo-500
+                      disabled:w3s-cursor-not-allowed disabled:w3s-opacity-40
                     "
                   >
-                    Confirm Payment
+                    {quoteLoading && !quote ? 'Fetching quote…' : 'Confirm Payment'}
                   </button>
                 </div>
               )}

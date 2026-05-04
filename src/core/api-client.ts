@@ -2,10 +2,12 @@ import {
   PaymentConfigSchema,
   PaymentSessionSchema,
   CreateSessionResponseSchema,
+  QuoteResponseSchema,
   Web3SettleApiError,
   type PaymentConfig,
   type PaymentSession,
   type CreateSessionResponse,
+  type QuoteResponse,
 } from './types';
 
 interface RequestOptions {
@@ -62,6 +64,32 @@ export class Web3SettleApiClient {
       },
     );
     return this.parse(raw, CreateSessionResponseSchema, 'session');
+  }
+
+  /**
+   * Server-side USD → token quote backed by Chainlink. Use the returned `amountToken` (atomic,
+   * decimal string) as the `value` / `amount` arg when building the on-chain tx so the user
+   * signs exactly what they were quoted.
+   *
+   * `token` is either `"native"` for the chain's gas token or a 0x-prefixed ERC20 address. The
+   * server rejects tokens not enabled on the storefront's active contract.
+   */
+  async fetchQuote(
+    network: string,
+    token: string,
+    amountUsd: number,
+    signal?: AbortSignal,
+  ): Promise<QuoteResponse> {
+    const qs = new URLSearchParams({
+      network,
+      token,
+      amountUsd: amountUsd.toString(),
+    });
+    const raw = await this.request(
+      `api/storefronts/${this.storefrontId}/quote?${qs.toString()}`,
+      { signal },
+    );
+    return this.parse(raw, QuoteResponseSchema, 'quote');
   }
 
   async getSessionStatus(sessionId: string, signal?: AbortSignal): Promise<PaymentSession> {

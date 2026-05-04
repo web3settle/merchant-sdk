@@ -39,6 +39,28 @@ export const PaymentConfigSchema = z.object({
   storefrontId: z.string().uuid(),
 });
 
+// Server-issued USD→token quote returned by GET /api/storefronts/{id}/quote. The SDK uses
+// `amountToken` (atomic, as a string for big numbers) verbatim when building the payInToken /
+// payInNative call so the user signs exactly what they were quoted. Slippage between quote and
+// confirmation is the merchant's concern — they reconcile USD value at webhook time.
+export const QuoteResponseSchema = z.object({
+  storefrontId: z.string().uuid(),
+  network: z.string().min(1),
+  token: z.string().min(1),
+  tokenSymbol: z.string().min(1),
+  tokenDecimals: z.number().int().min(0).max(30),
+  amountUsd: z.number().or(z.string()).transform((v) => Number(v)),
+  amountToken: z.string().min(1),
+  amountTokenDisplay: z.number().or(z.string()).transform((v) => Number(v)),
+  priceUsd: z.number().or(z.string()).transform((v) => Number(v)),
+  source: z.string().min(1),
+  feedAddress: z.string().min(1),
+  roundId: z.number().or(z.string()),
+  observedAt: z.string(),
+});
+
+export type QuoteResponse = z.infer<typeof QuoteResponseSchema>;
+
 export const PaymentSessionSchema = z.object({
   id: z.string().uuid(),
   amount: z.number().positive(),
