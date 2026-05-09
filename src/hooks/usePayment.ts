@@ -7,9 +7,19 @@ import {
   executePayInToken,
   approveToken,
   checkAllowance,
+  submitPermit,
   waitForReceipt,
 } from '../core/contract';
 import { usdToNativeAmount, usdToTokenAmount } from '../core/price-feed';
+import { classifyError as classifyErrorKind } from '../core/pipeline';
+import {
+  buildTelemetryEvent,
+  hashWalletAddress,
+  safeEmit,
+  type TelemetryCallback,
+  type TelemetryPhase,
+} from '../core/telemetry';
+import { detectPermitSupport, signPermit } from '../evm/permit';
 import {
   defaultConfirmationPolicy,
   type ConfirmationPolicy,
@@ -24,6 +34,31 @@ interface StartPaymentOptions {
    * that hasn't been migrated to the quote endpoint.
    */
   atomicAmount?: string;
+  /**
+   * Optional opt-in telemetry hook. The hook also reads a callback off the
+   * `Web3SettleProvider` config; this prop wins for tests and ad-hoc calls.
+   */
+  onTelemetry?: TelemetryCallback;
+  /** Wallet provider id for telemetry. e.g. "injected", "walletConnect". */
+  walletId?: string;
+  /** Contract version for telemetry. */
+  contractVersion?: string;
+  /**
+   * EIP-2612 permit policy (item 14.6).
+   *
+   *   - `"auto"` (default): probe the token; use permit when supported, fall
+   *     back to `approve()` when not. This is the value most merchants want.
+   *   - `"never"`: always use `approve()`. Useful when the merchant has CSP
+   *     rules that block the EIP-712 sign popup.
+   *   - `"require"`: only use permit. Throws if the token doesn't support it.
+   *     Lets advanced merchants enforce the cheaper path.
+   *
+   * Permit lets the user sign an off-chain EIP-712 message instead of paying
+   * gas for an `approve()` tx — saves ~$0.50 of gas + one wallet popup.
+   */
+  permit?: 'auto' | 'never' | 'require';
+  /** Permit deadline in unix-seconds. Defaults to `now + 30*60`. */
+  permitDeadlineSeconds?: number;
   /**
    * Confirmation policy (Segment 2.2). When supplied, the hook delegates depth
    * resolution (and Solana commitment selection) to the policy instead of
@@ -99,7 +134,27 @@ export function usePayment(): UsePaymentReturn {
       setTxHash(null);
       setError(null);
 
+      // Pre-build the telemetry context once so all catch sites share state.
+      let phase: TelemetryPhase = 'connect';
+      const emit = async (rawErr: unknown) => {
+        const callback = opts.onTelemetry;
+        if (!callback) return;
+        const errMsg = rawErr instanceof Error ? rawErr.message : String(rawErr);
+        const [signer] = await walletClient.getAddresses().catch(() => [undefined]);
+        const digest = await hashWalletAddress(signer);
+        safeEmit(callback, buildTelemetryEvent({
+          chain: 'evm',
+          phase,
+          errorCode: classifyErrorKind(rawErr),
+          walletId: opts.walletId,
+          contractVersion: opts.contractVersion,
+          walletDigest: digest,
+          rawMessage: errMsg,
+        }));
+      };
+
       try {
+        phase = 'switch-network';
         const currentChainId = await walletClient.getChainId();
         if (currentChainId !== chain.chainId) {
           await switchChainAsync({ chainId: chain.chainId });
@@ -115,14 +170,17 @@ export function usePayment(): UsePaymentReturn {
             weiAmount = BigInt(opts.atomicAmount);
           } else {
             // Legacy CoinGecko path — kept for tests and pre-quote callers.
+            phase = 'quote';
             const nativeAmount = await usdToNativeAmount(amount, chain.chainId, controller.signal);
             weiAmount = parseUnits(nativeAmount.toFixed(18), nativeDecimals);
           }
 
+          phase = 'send';
           setStatus(PaymentStatus.Sending);
           const hash = await executePayInNative(walletClient, contractAddress, weiAmount);
           setTxHash(hash);
 
+          phase = 'confirm';
           setStatus(PaymentStatus.Confirming);
           // Segment 2.2: depth comes from the policy (which honours
           // `chain.confirmations` when set, falls back to the SPD-canonical
@@ -166,16 +224,64 @@ export function usePayment(): UsePaymentReturn {
         );
 
         if (currentAllowance < rawAmount) {
-          setStatus(PaymentStatus.Approving);
-          const approveHash = await approveToken(
-            walletClient,
-            tokenAddress,
-            contractAddress,
-            rawAmount,
-          );
-          await waitForReceipt(publicClient, approveHash);
+          // EIP-2612 permit path (item 14.6). Strategy:
+          //   1. detect support (cheap — three view calls);
+          //   2. sign EIP-712 typed data;
+          //   3. submit `permit(...)` directly to the token (still on-chain,
+          //      but allowed to be a meta-tx in future). The user sees one
+          //      popup for sign + one for the pay-in instead of two full
+          //      transactions for approve + pay-in.
+          // Falls back gracefully when `permit !== "require"`.
+          const permitMode = opts.permit ?? 'auto';
+          let permitHandled = false;
+          if (permitMode !== 'never') {
+            phase = 'permit';
+            const support = await detectPermitSupport(publicClient, tokenAddress, ownerAddress);
+            if (support.supported && support.name && support.nonce !== undefined) {
+              const deadline = BigInt(
+                opts.permitDeadlineSeconds ?? Math.floor(Date.now() / 1000) + 30 * 60,
+              );
+              const sig = await signPermit({
+                walletClient,
+                chainId: chain.chainId,
+                tokenAddress,
+                tokenName: support.name,
+                tokenVersion: support.version,
+                owner: ownerAddress,
+                spender: contractAddress,
+                value: rawAmount,
+                nonce: support.nonce,
+                deadline,
+              });
+              const permitHash = await submitPermit(walletClient, tokenAddress, {
+                owner: ownerAddress,
+                spender: contractAddress,
+                value: rawAmount,
+                deadline,
+                v: sig.v,
+                r: sig.r,
+                s: sig.s,
+              });
+              await waitForReceipt(publicClient, permitHash);
+              permitHandled = true;
+            } else if (permitMode === 'require') {
+              throw new Error('Token does not support EIP-2612 permit');
+            }
+          }
+          if (!permitHandled) {
+            phase = 'approve';
+            setStatus(PaymentStatus.Approving);
+            const approveHash = await approveToken(
+              walletClient,
+              tokenAddress,
+              contractAddress,
+              rawAmount,
+            );
+            await waitForReceipt(publicClient, approveHash);
+          }
         }
 
+        phase = 'send';
         setStatus(PaymentStatus.Sending);
         const hash = await executePayInToken(
           walletClient,
@@ -185,6 +291,7 @@ export function usePayment(): UsePaymentReturn {
         );
         setTxHash(hash);
 
+        phase = 'confirm';
         setStatus(PaymentStatus.Confirming);
         // Segment 2.2: same policy resolution as the native branch.
         const policy = opts.confirmationPolicy ?? defaultConfirmationPolicy;
@@ -199,6 +306,10 @@ export function usePayment(): UsePaymentReturn {
           setStatus(PaymentStatus.Idle);
           return;
         }
+        // Telemetry breadcrumb (item 14.2). Awaited so the digest hash lands
+        // before we surface the error to the user — the callback itself is
+        // sync, the await here is for the sha-256.
+        await emit(err);
         setError(classifyError(err));
         setStatus(PaymentStatus.Error);
       }
