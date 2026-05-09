@@ -69,10 +69,14 @@ const INITIAL_STATE: PayButtonState = Object.freeze({
 });
 
 export function createPayButtonController(opts: PayButtonControllerOptions): PayButtonController {
-  if (!opts.apiClient && !(opts.apiBaseUrl && opts.storefrontId)) {
+  let apiClient: Web3SettleApiClient;
+  if (opts.apiClient) {
+    apiClient = opts.apiClient;
+  } else if (opts.apiBaseUrl && opts.storefrontId) {
+    apiClient = new Web3SettleApiClient(opts.apiBaseUrl, opts.storefrontId);
+  } else {
     throw new Error('createPayButtonController requires either apiClient or apiBaseUrl+storefrontId');
   }
-  const apiClient = opts.apiClient ?? new Web3SettleApiClient(opts.apiBaseUrl as string, opts.storefrontId as string);
 
   let state: PayButtonState = INITIAL_STATE;
   const listeners = new Set<(s: PayButtonState) => void>();

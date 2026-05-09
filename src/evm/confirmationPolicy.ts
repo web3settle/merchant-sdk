@@ -49,7 +49,6 @@ class EvmConfirmationPolicy implements ConfirmationPolicy {
       // Conservative default; logged so integrators notice the mis-wire.
       // Console.warn is called once per resolve — acceptable for an SDK
       // diagnostic.
-      // eslint-disable-next-line no-console
       console.warn(
         `[w3s] EVM ConfirmationPolicy used with non-EVM chainId ${config.chainId}; ` +
           `falling back to default depth. Use the chain-family-specific subpath instead.`,

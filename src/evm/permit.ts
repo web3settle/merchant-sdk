@@ -129,7 +129,7 @@ export async function detectPermitSupport(
       supported: true,
       name,
       version,
-      nonce: nonce as bigint,
+      nonce,
     };
   } catch {
     return { supported: false };
@@ -272,9 +272,9 @@ export function validatePermitSignature(sig: Hex): { valid: boolean; reason?: st
   if (sig.length !== 132) {
     return { valid: false, reason: `Expected 132 hex chars (65 bytes), got ${sig.length}` };
   }
-  const r = `0x${sig.slice(2, 66)}` as Hex;
-  const s = `0x${sig.slice(66, 130)}` as Hex;
-  const vHex = `0x${sig.slice(130)}` as Hex;
+  const r: Hex = `0x${sig.slice(2, 66)}`;
+  const s: Hex = `0x${sig.slice(66, 130)}`;
+  const vHex: Hex = `0x${sig.slice(130)}`;
   if (hexToBigInt(r) === 0n) return { valid: false, reason: 'r is zero' };
   if (hexToBigInt(s) === 0n) return { valid: false, reason: 's is zero' };
   // Reject high-s per EIP-2 to avoid signature malleability.

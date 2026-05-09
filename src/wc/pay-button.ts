@@ -23,6 +23,7 @@ import {
   type PayButtonController,
   type PayButtonState,
 } from '../headless/usePayButton';
+import { PaymentStatus } from '../core/types';
 
 const TEMPLATE = `
 <style>
@@ -62,11 +63,9 @@ export class Web3SettlePayButtonElement extends HTMLElement {
   private buttonEl: HTMLButtonElement | null = null;
 
   connectedCallback(): void {
-    if (!this.shadowRoot) {
-      this.attachShadow({ mode: 'open' });
-    }
-    this.shadowRoot!.innerHTML = TEMPLATE;
-    this.buttonEl = this.shadowRoot!.querySelector('button');
+    const root = this.shadowRoot ?? this.attachShadow({ mode: 'open' });
+    root.innerHTML = TEMPLATE;
+    this.buttonEl = root.querySelector('button');
     this.buttonEl?.addEventListener('click', this.handleClick);
     this.render();
   }
@@ -133,13 +132,13 @@ export class Web3SettlePayButtonElement extends HTMLElement {
 
   private handleStateChange = (state: PayButtonState): void => {
     const amount = Number(this.getAttribute('amount') ?? '0');
-    if (state.txHash && state.status === 'success') {
+    if (state.txHash && state.status === PaymentStatus.Success) {
       this.dispatchEvent(new CustomEvent('payment-success', {
         detail: { amount, txHash: state.txHash },
       }));
       return;
     }
-    if (state.error && state.status === 'error') {
+    if (state.error && state.status === PaymentStatus.Error) {
       this.dispatchEvent(new CustomEvent('payment-error', {
         detail: { amount, message: state.error },
       }));

@@ -44,12 +44,12 @@ export function useQuote(
   const [tick, setTick] = useState(0);
 
   const ready =
-    enabled && !!network && !!token && typeof amountUsd === 'number' && amountUsd > 0;
+    enabled && Boolean(network) && Boolean(token) && typeof amountUsd === 'number' && amountUsd > 0;
 
   const refresh = () => setTick((t) => t + 1);
 
   useEffect(() => {
-    if (!ready) {
+    if (!ready || network === null || token === null || amountUsd === null) {
       setQuote(null);
       setError(null);
       return;
@@ -61,7 +61,7 @@ export function useQuote(
     setError(null);
 
     client
-      .fetchQuote(network!, token!, amountUsd!, controller.signal)
+      .fetchQuote(network, token, amountUsd, controller.signal)
       .then((q) => {
         if (!controller.signal.aborted) setQuote(q);
       })

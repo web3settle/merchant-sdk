@@ -187,7 +187,7 @@ export function Web3SettleTopUpModal({
     selectedChain?.name ?? null,
     quoteToken,
     effectiveAmount,
-    { enabled: isOpen && status === PaymentStatus.Idle && !!selectedChain && !!quoteToken },
+    { enabled: isOpen && status === PaymentStatus.Idle && Boolean(selectedChain) && Boolean(quoteToken) },
   );
 
   // ── Token balance (best-effort; non-blocking) ──────────────────────────
@@ -205,9 +205,10 @@ export function Web3SettleTopUpModal({
   useEffect(() => {
     let cancelled = false;
     setGasEstimate(null);
+    const account = wallet.address;
     if (
       !publicClient ||
-      !wallet.address ||
+      !account ||
       !selectedChain ||
       !selectedTokenOption ||
       !quote
@@ -223,7 +224,7 @@ export function Web3SettleTopUpModal({
         const est = await estimateEvmGas(
           {
             publicClient,
-            account: wallet.address as `0x${string}`,
+            account,
             contractAddress: selectedChain.contractAddress as `0x${string}`,
             nativeDecimals: selectedChain.nativeCurrency?.decimals ?? 18,
             token: tokenForEstimate,
@@ -247,12 +248,13 @@ export function Web3SettleTopUpModal({
   useEffect(() => {
     let cancelled = false;
     setTokenBalance(null);
-    if (!wallet.address || !publicClient || !selectedChain || !selectedTokenOption) return;
+    const account = wallet.address;
+    if (!account || !publicClient || !selectedChain || !selectedTokenOption) return;
 
     const loadBalance = async () => {
       try {
         if (selectedTokenOption.isNative) {
-          const bal = await publicClient.getBalance({ address: wallet.address as `0x${string}` });
+          const bal = await publicClient.getBalance({ address: account });
           if (!cancelled) {
             setTokenBalance(Number(formatUnits(bal, selectedTokenOption.decimals)).toFixed(4));
           }
@@ -260,7 +262,7 @@ export function Web3SettleTopUpModal({
           const bal = await getTokenBalance(
             publicClient,
             selectedTokenOption.value as `0x${string}`,
-            wallet.address as `0x${string}`,
+            account,
           );
           if (!cancelled) {
             setTokenBalance(Number(formatUnits(bal, selectedTokenOption.decimals)).toFixed(4));
@@ -326,9 +328,9 @@ export function Web3SettleTopUpModal({
 
   const canPay =
     wallet.isConnected &&
-    !!selectedChain &&
-    !!selectedToken &&
-    !!quote &&
+    Boolean(selectedChain) &&
+    Boolean(selectedToken) &&
+    Boolean(quote) &&
     !quoteLoading &&
     !quoteError &&
     !isProcessing;
@@ -428,7 +430,6 @@ export function Web3SettleTopUpModal({
                 {typeof fixedAmount === 'number' ? (
                   <div
                     id={amountInputId}
-                    role="text"
                     className="
                       w3s-flex w3s-items-baseline w3s-gap-1
                       w3s-rounded-xl w3s-border w3s-border-white/10 w3s-bg-white/5
@@ -760,7 +761,7 @@ function QuotePanel({
       "
     >
       <div className="w3s-flex w3s-justify-between w3s-items-baseline">
-        <span className="w3s-text-xs w3s-text-slate-400">You'll send</span>
+        <span className="w3s-text-xs w3s-text-slate-400">You&apos;ll send</span>
         <span className="w3s-text-base w3s-font-semibold w3s-text-white">
           {formatTokenAmount(quote.amountTokenDisplay, quote.tokenDecimals)} {quote.tokenSymbol}
         </span>
@@ -1047,7 +1048,7 @@ function ConfigErrorState({ error, onRetry }: { error: string; onRetry: () => vo
         <AlertIcon className="w3s-h-6 w3s-w-6 w3s-text-amber-400" />
       </div>
       <div className="w3s-text-center">
-        <h3 className="w3s-text-base w3s-font-semibold w3s-text-white">Couldn't load payment options</h3>
+        <h3 className="w3s-text-base w3s-font-semibold w3s-text-white">Couldn&apos;t load payment options</h3>
         <p className="w3s-mt-1 w3s-text-xs w3s-text-slate-400">{error}</p>
       </div>
       <button
@@ -1074,7 +1075,7 @@ function NoChainsState() {
       <div className="w3s-text-center w3s-max-w-xs">
         <h3 className="w3s-text-base w3s-font-semibold w3s-text-white">No payment options yet</h3>
         <p className="w3s-mt-1 w3s-text-xs w3s-text-slate-400">
-          The merchant hasn't bound any supported networks to this storefront. Once they deploy
+          The merchant hasn&apos;t bound any supported networks to this storefront. Once they deploy
           a contract on Ethereum, Polygon, or Base and enable a token, this modal will let you pay.
         </p>
       </div>

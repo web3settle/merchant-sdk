@@ -98,7 +98,6 @@ export function safeEmit(
   } catch (err) {
     if (!warnedOnce) {
       warnedOnce = true;
-      // eslint-disable-next-line no-console
       console.warn(
         '[Web3Settle] telemetry callback threw — subsequent throws will be silenced.',
         err,
