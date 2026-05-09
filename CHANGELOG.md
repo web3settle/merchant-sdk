@@ -5,6 +5,20 @@ All notable changes to `@web3settle/merchant-sdk` will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-05-09
+
+### Added
+
+- **Gas estimator (item 14.1)** — `estimateEvmGas`, `estimateEvmApproveGas`, `estimateSolanaGas` (with `buildSolanaEstimateInstruction`, `LAMPORTS_PER_SIGNATURE`), `estimateTronGas` / `computeTronCost` (with `DEFAULT_SUN_PER_ENERGY`). Single `GasEstimate` shape across all three chains: `{ native, usd, breakdown }`. The TopUpModal now renders a `≈ $X` network-fee badge under the quote when an estimate is available; failure to estimate hides the badge silently and never blocks pay.
+- **Telemetry breadcrumbs (item 14.2)** — opt-in `onTelemetry` callback on `Web3SettleConfig`, plus `core/telemetry`: `buildTelemetryEvent`, `redactErrorMessage`, `hashWalletAddress`, `safeEmit`. EVM, Solana, and TRON payment hooks emit a single `TelemetryEvent` per failed pay-in with `{ chain, phase, errorCode, walletId, contractVersion, walletDigest, message }`. Privacy contract: no plain addresses (only an opaque SHA-256 prefix), no amounts, message is PII-redacted to ≤240 chars. The callback is wrapped in `safeEmit` so a buggy analytics handler can never break the payment flow.
+- **Headless layer + Web Components (item 14.5)** — new subpath exports `@web3settle/merchant-sdk/headless` (`createPayButtonController`, `createWalletConnectController`, `createGasEstimateController`) and `@web3settle/merchant-sdk/wc` (`<web3settle-pay-button>` native HTMLElement). The headless controllers expose a `subscribe()` API with no React imports, so Vue/Svelte/vanilla JS callers can drive the same flow. The Web Component reuses the headless controller end-to-end.
+- **EIP-712 permit signing (item 14.6)** — `evm/permit`: `detectPermitSupport`, `signPermit`, `buildPermitTypedData`, `validatePermitSignature`, `assertDeadlineFresh`. The pay-token EVM flow now accepts a `permit?: 'auto' | 'never' | 'require'` option (default `'auto'`): when the token implements EIP-2612, the SDK signs the typed-data permit and submits `permit(...)` directly instead of running a separate `approve()` tx. Saves the user one popup and ~$0.50 of gas.
+
+### Changed
+
+- `Web3SettleConfig` now carries optional `onTelemetry` and `contractVersion` fields. Both are threaded through `usePayment.startPayment` (and the Solana / TRON equivalents) so the modal does not need to wire them manually.
+- New multi-entry build outputs: `dist/headless.{js,cjs}`, `dist/wc.{js,cjs}` alongside the existing entries.
+
 ## [0.4.0] - 2026-04-17
 
 ### Added
