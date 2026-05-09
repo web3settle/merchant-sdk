@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { TelemetryCallback } from './telemetry';
 
 // Accept EVM hex (0x + 40 hex), Solana base58 (32–44 chars), and TRON base58 (T + 33 chars).
 // Per-pipeline validators in src/solana/ and src/tron/ tighten this at construction time.
@@ -39,6 +40,28 @@ export const PaymentConfigSchema = z.object({
   storefrontId: z.string().uuid(),
 });
 
+// Server-issued USD→token quote returned by GET /api/storefronts/{id}/quote. The SDK uses
+// `amountToken` (atomic, as a string for big numbers) verbatim when building the payInToken /
+// payInNative call so the user signs exactly what they were quoted. Slippage between quote and
+// confirmation is the merchant's concern — they reconcile USD value at webhook time.
+export const QuoteResponseSchema = z.object({
+  storefrontId: z.string().uuid(),
+  network: z.string().min(1),
+  token: z.string().min(1),
+  tokenSymbol: z.string().min(1),
+  tokenDecimals: z.number().int().min(0).max(30),
+  amountUsd: z.number().or(z.string()).transform((v) => Number(v)),
+  amountToken: z.string().min(1),
+  amountTokenDisplay: z.number().or(z.string()).transform((v) => Number(v)),
+  priceUsd: z.number().or(z.string()).transform((v) => Number(v)),
+  source: z.string().min(1),
+  feedAddress: z.string().min(1),
+  roundId: z.number().or(z.string()),
+  observedAt: z.string(),
+});
+
+export type QuoteResponse = z.infer<typeof QuoteResponseSchema>;
+
 export const PaymentSessionSchema = z.object({
   id: z.string().uuid(),
   amount: z.number().positive(),
@@ -72,6 +95,20 @@ export interface Web3SettleConfig {
   theme?: 'dark' | 'light';
   onSuccess?: (session: PaymentSession) => void;
   onError?: (error: Error) => void;
+  /**
+   * Optional opt-in failure breadcrumb. When the SDK catches a payment
+   * failure on EVM, Solana, or TRON, it builds a sanitized
+   * {@link TelemetryEvent} (no addresses except hashed; no amounts) and
+   * passes it to this callback. Throwing is caught and ignored — telemetry
+   * never blocks the user-facing flow. See `core/telemetry.ts` for the
+   * privacy contract.
+   */
+  onTelemetry?: TelemetryCallback;
+  /**
+   * Optional contract version string, surfaced in telemetry events so the
+   * merchant can spot regressions caused by a contract upgrade.
+   */
+  contractVersion?: string;
 }
 
 export enum PaymentStatus {
@@ -128,6 +165,20 @@ export interface TransactionStatusProps {
   txHash?: string;
   explorerUrl?: string;
   error?: string;
+  /**
+   * Optional Segment 2.2 inputs — when supplied, the component renders an
+   * "X of N confirmations" label (or commitment-level state for Solana)
+   * during {@link PaymentStatus.Confirming}. Both must be set for the label
+   * to render — supplying only one is a no-op.
+   *
+   * The component never imports a chain SDK to read `currentConfirmations`;
+   * it accepts the value as a prop so the caller (which already has the
+   * `publicClient` / `connection`) drives the polling loop.
+   */
+  chainId?: number;
+  /** Best-effort current confirmation depth (for EVM/TRON) or commitment
+   *  rank (0 pending, 1 confirmed, 2 finalized) for Solana. */
+  currentConfirmations?: number;
 }
 
 export interface WalletConnectProps {

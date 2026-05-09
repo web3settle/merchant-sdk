@@ -10,6 +10,11 @@ import { PaymentPipelineError, classifyError, type PaymentPipeline, type Payment
 import type { ChainConfig, TokenSelection } from '../core/types';
 import { NATIVE_TOKEN_SENTINEL } from '../core/types';
 import { usdToNativeAmount, usdToTokenAmount } from '../core/price-feed';
+import {
+  type ConfirmationPolicy,
+  type SolanaCommitmentLevel,
+} from '../core/ConfirmationPolicy';
+import { solanaConfirmationPolicy } from './confirmationPolicy';
 import { deriveConfigPda, hexToBytes32 } from './pda';
 import {
   buildPayInNativeInstruction,
@@ -30,6 +35,19 @@ export interface SolanaPipelineConfig {
   programId: string;
   /** Per-merchant 32-byte identifier (hex string, with or without 0x prefix). */
   merchantId: string;
+  /**
+   * Optional Segment 2.2 confirmation policy. Defaults to
+   * {@link solanaConfirmationPolicy} (commitment = `'confirmed'`). Pass
+   * `createSolanaConfirmationPolicy('finalized')` for high-value flows where
+   * the extra ~10 s of wait is acceptable.
+   */
+  confirmationPolicy?: ConfirmationPolicy;
+  /**
+   * Solana cluster chainId — gateway-internal sentinel (900 / 901 / 902).
+   * Used to look up the right commitment level / depth via the policy.
+   * Defaults to 901 (mainnet-beta).
+   */
+  chainId?: number;
 }
 
 /** Compute the Associated Token Account address for (owner, mint). */
@@ -50,6 +68,8 @@ export class SolanaPaymentPipeline implements PaymentPipeline {
   private readonly wallet: WalletContextState;
   private readonly programId: PublicKey;
   private readonly merchantId: Uint8Array;
+  private readonly policy: ConfirmationPolicy;
+  private readonly chainId: number;
 
   constructor(
     connection: Connection,
@@ -60,6 +80,8 @@ export class SolanaPaymentPipeline implements PaymentPipeline {
     this.wallet = wallet;
     this.programId = new PublicKey(config.programId);
     this.merchantId = hexToBytes32(config.merchantId);
+    this.policy = config.confirmationPolicy ?? solanaConfirmationPolicy;
+    this.chainId = config.chainId ?? 901;
   }
 
   async quoteAmount(
@@ -161,24 +183,33 @@ export class SolanaPaymentPipeline implements PaymentPipeline {
     _confirmations?: number,
   ): Promise<PaymentReceipt> {
     try {
-      // Solana's commitment levels: 'processed' | 'confirmed' | 'finalized'.
-      // We use 'confirmed' for UX speed; high-value flows should use 'finalized'.
-      const latestBlockhash = await this.connection.getLatestBlockhash('confirmed');
+      // Segment 2.2: commitment level resolved via the policy. Default policy
+      // returns 'confirmed' for UX speed; pass
+      // `createSolanaConfirmationPolicy('finalized')` for high-value flows.
+      const commitment: SolanaCommitmentLevel =
+        this.policy.commitmentLevel(this.chainId) ?? 'confirmed';
+      const latestBlockhash = await this.connection.getLatestBlockhash(commitment);
       const result = await this.connection.confirmTransaction(
         {
           signature: txHash,
           blockhash: latestBlockhash.blockhash,
           lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
         },
-        'confirmed',
+        commitment,
       );
 
       if (result.value.err) {
         return { success: false, blockNumber: null, raw: result };
       }
 
+      // `getTransaction` only accepts `Finality` ('confirmed' | 'finalized'),
+      // not the broader commitment type used by `confirmTransaction`. Promote
+      // 'processed' to 'confirmed' here — a tx that confirmed at 'processed'
+      // is by definition also at 'confirmed' or beyond by the time we hit
+      // this line.
+      const fetchCommitment = commitment === 'processed' ? 'confirmed' : commitment;
       const parsed = await this.connection.getTransaction(txHash, {
-        commitment: 'confirmed',
+        commitment: fetchCommitment,
         maxSupportedTransactionVersion: 0,
       });
 

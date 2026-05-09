@@ -25,6 +25,39 @@ export {
 } from './tronweb-global';
 export type { TronWebLike, TronContractLike } from './tronweb-global';
 
+// Gas / fee estimation (item 14.1)
+export {
+  estimateTronGas,
+  computeTronCost,
+  DEFAULT_SUN_PER_ENERGY,
+} from './estimateGas';
+export type {
+  EstimateTronGasInput,
+} from './estimateGas';
+
+// Confirmation policy (Segment 2.2) — TRON-locked default (19 confirmations).
+export { tronConfirmationPolicy } from './confirmationPolicy';
+export type {
+  ConfirmationPolicy,
+  ConfirmationProgress,
+  ChainFamily,
+  SolanaCommitmentLevel,
+} from '../core/ConfirmationPolicy';
+
+// Telemetry helpers (re-export from core for convenience)
+export {
+  buildTelemetryEvent,
+  hashWalletAddress,
+  redactErrorMessage,
+  safeEmit,
+} from '../core/telemetry';
+export type {
+  TelemetryEvent,
+  TelemetryCallback,
+  TelemetryChain,
+  TelemetryPhase,
+} from '../core/telemetry';
+
 // Re-exports from core for convenience.
 export { PaymentStatus, NATIVE_TOKEN_SENTINEL, Web3SettleApiError } from '../core/types';
 export type {

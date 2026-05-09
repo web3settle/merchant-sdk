@@ -3,6 +3,19 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { PaymentStatus, type ChainConfig, type TokenSelection } from '../core/types';
 import { classifyError, PaymentPipelineError } from '../core/pipeline';
 import { useSolanaPipeline } from './SolanaProvider';
+import {
+  buildTelemetryEvent,
+  hashWalletAddress,
+  safeEmit,
+  type TelemetryCallback,
+  type TelemetryPhase,
+} from '../core/telemetry';
+
+interface SolanaStartPaymentOpts {
+  onTelemetry?: TelemetryCallback;
+  walletId?: string;
+  contractVersion?: string;
+}
 
 interface UseSolanaPaymentReturn {
   status: PaymentStatus;
@@ -12,6 +25,7 @@ interface UseSolanaPaymentReturn {
     amount: number,
     chain: ChainConfig,
     token: TokenSelection,
+    opts?: SolanaStartPaymentOpts,
   ) => Promise<void>;
   reset: () => void;
 }
@@ -54,7 +68,12 @@ export function useSolanaPayment(): UseSolanaPaymentReturn {
   }, []);
 
   const startPayment = useCallback(
-    async (amount: number, chain: ChainConfig, token: TokenSelection) => {
+    async (
+      amount: number,
+      chain: ChainConfig,
+      token: TokenSelection,
+      opts: SolanaStartPaymentOpts = {},
+    ) => {
       if (!wallet.publicKey) {
         setError('Wallet not connected');
         setStatus(PaymentStatus.Error);
@@ -65,13 +84,17 @@ export function useSolanaPayment(): UseSolanaPaymentReturn {
       setTxHash(null);
       setError(null);
 
+      let phase: TelemetryPhase = 'connect';
       try {
+        phase = 'quote';
         const raw = await pipeline.quoteAmount(amount, chain, token);
 
+        phase = 'send';
         setStatus(PaymentStatus.Sending);
         const hash = await pipeline.execute(chain, token, raw);
         setTxHash(hash);
 
+        phase = 'confirm';
         setStatus(PaymentStatus.Confirming);
         const receipt = await pipeline.waitForReceipt(hash);
         if (!receipt.success) {
@@ -80,6 +103,20 @@ export function useSolanaPayment(): UseSolanaPaymentReturn {
 
         setStatus(PaymentStatus.Success);
       } catch (err) {
+        if (opts.onTelemetry) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          const digest = await hashWalletAddress(wallet.publicKey?.toBase58());
+          const errKind = err instanceof PaymentPipelineError ? err.kind : classifyError(err);
+          safeEmit(opts.onTelemetry, buildTelemetryEvent({
+            chain: 'solana',
+            phase,
+            errorCode: errKind,
+            walletId: opts.walletId,
+            contractVersion: opts.contractVersion,
+            walletDigest: digest,
+            rawMessage: errMsg,
+          }));
+        }
         setError(classifyMessage(err));
         setStatus(PaymentStatus.Error);
       }

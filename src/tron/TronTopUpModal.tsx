@@ -321,6 +321,7 @@ export function TronTopUpModal({ isOpen, onClose, amount: initialAmount }: TopUp
                   status={status}
                   txHash={txHash ?? undefined}
                   explorerUrl={selectedChain?.explorerUrl}
+                  chainId={selectedChain?.chainId}
                 />
               )}
 
@@ -330,6 +331,7 @@ export function TronTopUpModal({ isOpen, onClose, amount: initialAmount }: TopUp
                     status={status}
                     txHash={txHash ?? undefined}
                     explorerUrl={selectedChain?.explorerUrl}
+                    chainId={selectedChain?.chainId}
                     error={error ?? undefined}
                   />
                   <button

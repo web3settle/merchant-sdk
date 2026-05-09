@@ -2,6 +2,19 @@ import { useCallback, useState } from 'react';
 import { PaymentStatus, type ChainConfig, type TokenSelection } from '../core/types';
 import { classifyError, PaymentPipelineError } from '../core/pipeline';
 import { useTronWeb3SettleContext } from './TronProvider';
+import {
+  buildTelemetryEvent,
+  hashWalletAddress,
+  safeEmit,
+  type TelemetryCallback,
+  type TelemetryPhase,
+} from '../core/telemetry';
+
+interface TronStartPaymentOpts {
+  onTelemetry?: TelemetryCallback;
+  walletId?: string;
+  contractVersion?: string;
+}
 
 interface UseTronPaymentReturn {
   status: PaymentStatus;
@@ -11,6 +24,7 @@ interface UseTronPaymentReturn {
     amount: number,
     chain: ChainConfig,
     token: TokenSelection,
+    opts?: TronStartPaymentOpts,
   ) => Promise<void>;
   reset: () => void;
 }
@@ -52,7 +66,12 @@ export function useTronPayment(): UseTronPaymentReturn {
   }, []);
 
   const startPayment = useCallback(
-    async (amount: number, chain: ChainConfig, token: TokenSelection) => {
+    async (
+      amount: number,
+      chain: ChainConfig,
+      token: TokenSelection,
+      opts: TronStartPaymentOpts = {},
+    ) => {
       if (!wallet.connected || !wallet.address) {
         setError('TRON wallet not connected');
         setStatus(PaymentStatus.Error);
@@ -63,10 +82,13 @@ export function useTronPayment(): UseTronPaymentReturn {
       setTxHash(null);
       setError(null);
 
+      let phase: TelemetryPhase = 'connect';
       try {
+        phase = 'quote';
         const raw = await pipeline.quoteAmount(amount, chain, token);
 
         if (await pipeline.needsApproval(chain, token, raw)) {
+          phase = 'approve';
           setStatus(PaymentStatus.Approving);
           const approveTx = await pipeline.approve(chain, token, raw);
           // Confirm the approval lands before submitting the pay-in — otherwise
@@ -77,10 +99,12 @@ export function useTronPayment(): UseTronPaymentReturn {
           }
         }
 
+        phase = 'send';
         setStatus(PaymentStatus.Sending);
         const hash = await pipeline.execute(chain, token, raw);
         setTxHash(hash);
 
+        phase = 'confirm';
         setStatus(PaymentStatus.Confirming);
         const receipt = await pipeline.waitForReceipt(hash);
         if (!receipt.success) {
@@ -89,6 +113,20 @@ export function useTronPayment(): UseTronPaymentReturn {
 
         setStatus(PaymentStatus.Success);
       } catch (err) {
+        if (opts.onTelemetry) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          const digest = await hashWalletAddress(wallet.address);
+          const errKind = err instanceof PaymentPipelineError ? err.kind : classifyError(err);
+          safeEmit(opts.onTelemetry, buildTelemetryEvent({
+            chain: 'tron',
+            phase,
+            errorCode: errKind,
+            walletId: opts.walletId,
+            contractVersion: opts.contractVersion,
+            walletDigest: digest,
+            rawMessage: errMsg,
+          }));
+        }
         setError(classifyMessage(err));
         setStatus(PaymentStatus.Error);
       }

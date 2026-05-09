@@ -12,6 +12,68 @@ export { useWeb3Settle } from './hooks/useWeb3Settle';
 export { usePayment } from './hooks/usePayment';
 export { useWallet } from './hooks/useWallet';
 
+// ── EVM utilities ────────────────────────────────────────────────────────────
+export {
+  estimateEvmGas,
+  estimateEvmApproveGas,
+} from './evm/estimateGas';
+export type {
+  GasEstimate,
+  EvmGasBreakdown,
+  SolanaGasBreakdown,
+  TronGasBreakdown,
+  FeeOracleOptions,
+  EstimateEvmGasInput,
+  EstimateApproveGasInput,
+} from './evm/estimateGas';
+export {
+  detectPermitSupport,
+  signPermit,
+  buildPermitTypedData,
+  validatePermitSignature,
+  assertDeadlineFresh,
+} from './evm/permit';
+export type {
+  PermitSupport,
+  SignPermitInput,
+  PermitSignature,
+} from './evm/permit';
+
+// ── Telemetry ────────────────────────────────────────────────────────────────
+export {
+  buildTelemetryEvent,
+  hashWalletAddress,
+  redactErrorMessage,
+  safeEmit,
+} from './core/telemetry';
+export type {
+  TelemetryEvent,
+  TelemetryCallback,
+  TelemetryChain,
+  TelemetryPhase,
+  BuildEventInput,
+} from './core/telemetry';
+
+// ── Confirmation policy (Segment 2.2) ───────────────────────────────────────
+// Cross-chain abstraction over per-chain confirmation/finality. Storefronts
+// should consume `defaultConfirmationPolicy` instead of branching on
+// `chainId` to decide "is this safe yet". See `core/ConfirmationPolicy.ts`.
+export {
+  DefaultConfirmationPolicy,
+  defaultConfirmationPolicy,
+  createHighValueConfirmationPolicy,
+  DEFAULT_CONFIRMATION_THRESHOLDS,
+  CHAIN_FAMILY_REGISTRY,
+  DEFAULT_SECONDS_TO_FINALITY,
+} from './core/ConfirmationPolicy';
+export type {
+  ConfirmationPolicy,
+  ConfirmationProgress,
+  ChainFamily,
+  SolanaCommitmentLevel,
+} from './core/ConfirmationPolicy';
+export { evmConfirmationPolicy } from './evm/confirmationPolicy';
+
 // ── Core ─────────────────────────────────────────────────────────────────────
 export { Web3SettleApiClient } from './core/api-client';
 export {

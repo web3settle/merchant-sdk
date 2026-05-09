@@ -51,6 +51,8 @@ export default defineConfig({
         index: resolve(__dirname, 'src/index.ts'),
         solana: resolve(__dirname, 'src/solana/index.ts'),
         tron: resolve(__dirname, 'src/tron/index.ts'),
+        headless: resolve(__dirname, 'src/headless/index.ts'),
+        wc: resolve(__dirname, 'src/wc/index.ts'),
         styles: resolve(__dirname, 'src/styles.ts'),
       },
       formats: ['es', 'cjs'],

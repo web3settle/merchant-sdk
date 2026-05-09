@@ -1,6 +1,6 @@
 {
   "name": "@web3settle/merchant-sdk",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "React SDK for accepting crypto payments via Web3Settle (EVM + Solana + TRON)",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -24,6 +24,16 @@
       "types": "./dist/tron.d.ts",
       "import": "./dist/tron.js",
       "require": "./dist/tron.cjs"
+    },
+    "./headless": {
+      "types": "./dist/headless.d.ts",
+      "import": "./dist/headless.js",
+      "require": "./dist/headless.cjs"
+    },
+    "./wc": {
+      "types": "./dist/wc.d.ts",
+      "import": "./dist/wc.js",
+      "require": "./dist/wc.cjs"
     },
     "./styles.css": "./dist/styles.css"
   },
@@ -110,8 +120,12 @@
     "wagmi": "^2.14.0"
   },
   "overrides": {
-    "axios": "^1.15.0",
-    "hono": "^4.12.14",
+    "axios": "^1.16.0",
+    "hono": "^4.12.18",
+    "fast-uri": "^3.1.2",
+    "rpc-websockets": {
+      "uuid": "^11.1.1"
+    },
     "lodash": "^4.18.1",
     "follow-redirects": "^1.16.0",
     "esbuild": "^0.25.0"
