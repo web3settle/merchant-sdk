@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { TelemetryCallback } from './telemetry';
 
 // Accept EVM hex (0x + 40 hex), Solana base58 (32–44 chars), and TRON base58 (T + 33 chars).
 // Per-pipeline validators in src/solana/ and src/tron/ tighten this at construction time.
@@ -94,6 +95,20 @@ export interface Web3SettleConfig {
   theme?: 'dark' | 'light';
   onSuccess?: (session: PaymentSession) => void;
   onError?: (error: Error) => void;
+  /**
+   * Optional opt-in failure breadcrumb. When the SDK catches a payment
+   * failure on EVM, Solana, or TRON, it builds a sanitized
+   * {@link TelemetryEvent} (no addresses except hashed; no amounts) and
+   * passes it to this callback. Throwing is caught and ignored — telemetry
+   * never blocks the user-facing flow. See `core/telemetry.ts` for the
+   * privacy contract.
+   */
+  onTelemetry?: TelemetryCallback;
+  /**
+   * Optional contract version string, surfaced in telemetry events so the
+   * merchant can spot regressions caused by a contract upgrade.
+   */
+  contractVersion?: string;
 }
 
 export enum PaymentStatus {
