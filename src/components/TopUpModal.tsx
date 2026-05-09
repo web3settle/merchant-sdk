@@ -10,6 +10,7 @@ import { useQuote } from '../hooks/useQuote';
 import { useWeb3Settle } from '../hooks/useWeb3Settle';
 import { CHAIN_ICONS } from '../core/config';
 import { getTokenBalance } from '../core/contract';
+import { defaultConfirmationPolicy } from '../core/ConfirmationPolicy';
 
 // Wagmi is configured for these EVM chains in Web3SettleProvider. Solana / Tron flow through
 // dedicated sub-entrypoints (`@web3settle/merchant-sdk/solana`, `/tron`) — the main modal is
@@ -362,6 +363,7 @@ export function Web3SettleTopUpModal({
               status={status}
               txHash={txHash}
               explorerUrl={selectedChain?.explorerUrl}
+              chainId={selectedChain?.chainId}
             />
           ) : (
             <div className="w3s-flex w3s-flex-col w3s-gap-4">
@@ -856,10 +858,12 @@ function ProcessingState({
   status,
   txHash,
   explorerUrl,
+  chainId,
 }: {
   status: PaymentStatus;
   txHash: string | null;
   explorerUrl?: string;
+  chainId?: number;
 }) {
   const labelByStatus: Record<string, string> = {
     [PaymentStatus.Connecting]: 'Switching network…',
@@ -867,14 +871,33 @@ function ProcessingState({
     [PaymentStatus.Sending]: 'Waiting for wallet signature…',
     [PaymentStatus.Confirming]: 'Confirming on-chain…',
   };
+  // Segment 2.2: surface the policy-derived ETA + required-confirmations
+  // hint so the user knows what they're waiting for. Falls back to the
+  // generic "10-60 s" copy when no chainId is in scope.
+  const policy = defaultConfirmationPolicy;
+  const required =
+    typeof chainId === 'number' ? policy.requiredConfirmations(chainId) : null;
+  const etaSec =
+    typeof chainId === 'number' ? policy.estimatedSecondsToFinality(chainId) : 0;
+  const family = typeof chainId === 'number' ? policy.family(chainId) : null;
+  const isSolana = family === 'solana';
+  const hint =
+    required && etaSec > 0
+      ? isSolana
+        ? `Awaiting commitment (~${Math.round(etaSec)} s)`
+        : `Waiting for ${required} confirmations (~${Math.round(etaSec)} s)`
+      : 'This usually takes 10–60 seconds.';
   return (
     <div role="status" aria-live="polite" className="w3s-flex w3s-flex-col w3s-items-center w3s-gap-4 w3s-py-8">
       <SpinnerIcon className="w3s-h-10 w3s-w-10 w3s-text-indigo-400" />
       <div className="w3s-text-center">
         <div className="w3s-text-sm w3s-font-medium w3s-text-white">{labelByStatus[status] ?? 'Processing…'}</div>
         {status === PaymentStatus.Confirming && (
-          <div className="w3s-mt-1 w3s-text-xs w3s-text-slate-500">
-            This usually takes 10–60 seconds.
+          <div
+            data-testid="w3s-confirmation-hint"
+            className="w3s-mt-1 w3s-text-xs w3s-text-slate-500"
+          >
+            {hint}
           </div>
         )}
       </div>

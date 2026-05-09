@@ -33,6 +33,43 @@ export {
 } from './instructions';
 export type { PayInNativeAccounts, PayInTokenAccounts } from './instructions';
 
+// Gas / fee estimation (item 14.1)
+export {
+  estimateSolanaGas,
+  buildSolanaEstimateInstruction,
+  LAMPORTS_PER_SIGNATURE,
+} from './estimateGas';
+export type {
+  EstimateSolanaGasInput,
+} from './estimateGas';
+
+// Confirmation policy (Segment 2.2) — Solana-locked default ('confirmed').
+// Use createSolanaConfirmationPolicy('finalized') for high-value flows.
+export {
+  solanaConfirmationPolicy,
+  createSolanaConfirmationPolicy,
+} from './confirmationPolicy';
+export type {
+  ConfirmationPolicy,
+  ConfirmationProgress,
+  ChainFamily,
+  SolanaCommitmentLevel,
+} from '../core/ConfirmationPolicy';
+
+// Telemetry helpers (re-export from core for convenience)
+export {
+  buildTelemetryEvent,
+  hashWalletAddress,
+  redactErrorMessage,
+  safeEmit,
+} from '../core/telemetry';
+export type {
+  TelemetryEvent,
+  TelemetryCallback,
+  TelemetryChain,
+  TelemetryPhase,
+} from '../core/telemetry';
+
 // Re-exports from core for convenience.
 export { PaymentStatus, NATIVE_TOKEN_SENTINEL, Web3SettleApiError } from '../core/types';
 export type {

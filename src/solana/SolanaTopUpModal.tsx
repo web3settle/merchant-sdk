@@ -331,6 +331,7 @@ export function SolanaTopUpModal({ isOpen, onClose, amount: initialAmount }: Top
                   status={status}
                   txHash={txHash ?? undefined}
                   explorerUrl={selectedChain?.explorerUrl}
+                  chainId={selectedChain?.chainId}
                 />
               )}
 
@@ -340,6 +341,7 @@ export function SolanaTopUpModal({ isOpen, onClose, amount: initialAmount }: Top
                     status={status}
                     txHash={txHash ?? undefined}
                     explorerUrl={selectedChain?.explorerUrl}
+                    chainId={selectedChain?.chainId}
                     error={error ?? undefined}
                   />
                   <button

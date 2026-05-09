@@ -150,6 +150,20 @@ export interface TransactionStatusProps {
   txHash?: string;
   explorerUrl?: string;
   error?: string;
+  /**
+   * Optional Segment 2.2 inputs — when supplied, the component renders an
+   * "X of N confirmations" label (or commitment-level state for Solana)
+   * during {@link PaymentStatus.Confirming}. Both must be set for the label
+   * to render — supplying only one is a no-op.
+   *
+   * The component never imports a chain SDK to read `currentConfirmations`;
+   * it accepts the value as a prop so the caller (which already has the
+   * `publicClient` / `connection`) drives the polling loop.
+   */
+  chainId?: number;
+  /** Best-effort current confirmation depth (for EVM/TRON) or commitment
+   *  rank (0 pending, 1 confirmed, 2 finalized) for Solana. */
+  currentConfirmations?: number;
 }
 
 export interface WalletConnectProps {

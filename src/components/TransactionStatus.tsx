@@ -1,4 +1,8 @@
 import { PaymentStatus, type TransactionStatusProps } from '../core/types';
+import {
+  defaultConfirmationPolicy,
+  type ConfirmationPolicy,
+} from '../core/ConfirmationPolicy';
 
 const STEP_CONFIG = [
   { status: PaymentStatus.Sending, label: 'Sending transaction' },
@@ -72,12 +76,25 @@ function getStepState(
   return 'pending';
 }
 
+/**
+ * Props extension that lets callers pass a custom {@link ConfirmationPolicy}.
+ * Kept as an addition (not on `TransactionStatusProps`) so existing
+ * consumers compile unchanged. Storefronts that want a high-value Solana
+ * setup can supply `createSolanaConfirmationPolicy('finalized')`.
+ */
+export interface TransactionStatusExtraProps {
+  confirmationPolicy?: ConfirmationPolicy;
+}
+
 export function TransactionStatus({
   status,
   txHash,
   explorerUrl,
   error,
-}: TransactionStatusProps) {
+  chainId,
+  currentConfirmations,
+  confirmationPolicy,
+}: TransactionStatusProps & TransactionStatusExtraProps) {
   if (status === PaymentStatus.Error) {
     return (
       <div
@@ -140,10 +157,24 @@ export function TransactionStatus({
     );
   }
 
+  // Segment 2.2: when chainId + currentConfirmations are supplied, render
+  // a render-ready "X of N" or commitment-level label using the policy.
+  // Falls back silently when either prop is missing — so existing callers
+  // keep their unchanged "Confirming on-chain..." text.
+  const policy = confirmationPolicy ?? defaultConfirmationPolicy;
+  const showProgress =
+    typeof chainId === 'number' &&
+    typeof currentConfirmations === 'number' &&
+    status === PaymentStatus.Confirming;
+  const progressLabel = showProgress
+    ? policy.progress(chainId, currentConfirmations).label
+    : null;
+
   return (
     <div role="status" aria-live="polite" className="w3s-flex w3s-flex-col w3s-gap-4 w3s-py-4">
       {STEP_CONFIG.map((step, index) => {
         const state = getStepState(status, step.status);
+        const isConfirmingStep = step.status === PaymentStatus.Confirming;
         return (
           <div key={step.status} className="w3s-flex w3s-items-center w3s-gap-3">
             <div className="w3s-flex w3s-flex-col w3s-items-center">
@@ -178,21 +209,31 @@ export function TransactionStatus({
               )}
             </div>
 
-            <span
-              className={`
-                w3s-text-sm w3s-transition-colors w3s-duration-300
-                ${
-                  state === 'completed'
-                    ? 'w3s-text-green-400'
-                    : state === 'active'
-                      ? 'w3s-text-white w3s-font-medium'
-                      : 'w3s-text-slate-500'
-                }
-              `}
-            >
-              {step.label}
-              {state === 'active' && '...'}
-            </span>
+            <div className="w3s-flex w3s-flex-col">
+              <span
+                className={`
+                  w3s-text-sm w3s-transition-colors w3s-duration-300
+                  ${
+                    state === 'completed'
+                      ? 'w3s-text-green-400'
+                      : state === 'active'
+                        ? 'w3s-text-white w3s-font-medium'
+                        : 'w3s-text-slate-500'
+                  }
+                `}
+              >
+                {step.label}
+                {state === 'active' && '...'}
+              </span>
+              {isConfirmingStep && state === 'active' && progressLabel && (
+                <span
+                  data-testid="w3s-confirmation-progress"
+                  className="w3s-text-xs w3s-text-slate-400 w3s-mt-0.5"
+                >
+                  {progressLabel}
+                </span>
+              )}
+            </div>
           </div>
         );
       })}

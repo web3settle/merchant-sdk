@@ -10,6 +10,10 @@ import {
   waitForReceipt,
 } from '../core/contract';
 import { usdToNativeAmount, usdToTokenAmount } from '../core/price-feed';
+import {
+  defaultConfirmationPolicy,
+  type ConfirmationPolicy,
+} from '../core/ConfirmationPolicy';
 
 interface StartPaymentOptions {
   /**
@@ -20,6 +24,14 @@ interface StartPaymentOptions {
    * that hasn't been migrated to the quote endpoint.
    */
   atomicAmount?: string;
+  /**
+   * Confirmation policy (Segment 2.2). When supplied, the hook delegates depth
+   * resolution (and Solana commitment selection) to the policy instead of
+   * branching on `chain.chainId`. Defaults to {@link defaultConfirmationPolicy}.
+   * `chain.confirmations` continues to take precedence when set — the policy
+   * only fills in the gap when the per-chain override is absent.
+   */
+  confirmationPolicy?: ConfirmationPolicy;
 }
 
 interface UsePaymentReturn {
@@ -112,7 +124,13 @@ export function usePayment(): UsePaymentReturn {
           setTxHash(hash);
 
           setStatus(PaymentStatus.Confirming);
-          const receipt = await waitForReceipt(publicClient, hash, chain.confirmations);
+          // Segment 2.2: depth comes from the policy (which honours
+          // `chain.confirmations` when set, falls back to the SPD-canonical
+          // table otherwise). Storefronts no longer need to branch on
+          // chainId.
+          const policy = opts.confirmationPolicy ?? defaultConfirmationPolicy;
+          const depth = policy.resolve(chain);
+          const receipt = await waitForReceipt(publicClient, hash, depth);
           if (receipt.status === 'reverted') {
             throw new Error('Transaction reverted on-chain');
           }
@@ -168,7 +186,10 @@ export function usePayment(): UsePaymentReturn {
         setTxHash(hash);
 
         setStatus(PaymentStatus.Confirming);
-        const receipt = await waitForReceipt(publicClient, hash, chain.confirmations);
+        // Segment 2.2: same policy resolution as the native branch.
+        const policy = opts.confirmationPolicy ?? defaultConfirmationPolicy;
+        const depth = policy.resolve(chain);
+        const receipt = await waitForReceipt(publicClient, hash, depth);
         if (receipt.status === 'reverted') {
           throw new Error('Transaction reverted on-chain');
         }
