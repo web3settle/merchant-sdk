@@ -10,6 +10,7 @@ import { useQuote } from '../hooks/useQuote';
 import { useWeb3Settle } from '../hooks/useWeb3Settle';
 import { CHAIN_ICONS } from '../core/config';
 import { getTokenBalance } from '../core/contract';
+import { estimateEvmGas, type GasEstimate } from '../evm/estimateGas';
 import { defaultConfirmationPolicy } from '../core/ConfirmationPolicy';
 
 // Wagmi is configured for these EVM chains in Web3SettleProvider. Solana / Tron flow through
@@ -196,6 +197,53 @@ export function Web3SettleTopUpModal({
   const publicClient = usePublicClient({
     chainId: selectedChain?.chainId,
   });
+
+  // ── Gas estimate (item 14.1) ────────────────────────────────────────────
+  // Best-effort: a failure here just hides the "≈ $X fee" badge — never blocks
+  // the pay flow.
+  const [gasEstimate, setGasEstimate] = useState<GasEstimate | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setGasEstimate(null);
+    if (
+      !publicClient ||
+      !wallet.address ||
+      !selectedChain ||
+      !selectedTokenOption ||
+      !quote
+    ) {
+      return;
+    }
+    const run = async () => {
+      try {
+        const amountAtomic = BigInt(quote.amountToken);
+        const tokenForEstimate = selectedTokenOption.isNative
+          ? NATIVE_TOKEN_SENTINEL
+          : (selectedTokenOption.value as `0x${string}`);
+        const est = await estimateEvmGas(
+          {
+            publicClient,
+            account: wallet.address as `0x${string}`,
+            contractAddress: selectedChain.contractAddress as `0x${string}`,
+            nativeDecimals: selectedChain.nativeCurrency?.decimals ?? 18,
+            token: tokenForEstimate,
+            amount: amountAtomic,
+          },
+          // The quote already carries a price for the selected token; if the
+          // selected token is native we can use quote.priceUsd directly. For
+          // ERC-20 we don't have native price handy here — leave usd null and
+          // the modal renders "≈ network fee" without a $ figure.
+          selectedTokenOption.isNative ? { priceUsd: quote.priceUsd } : {},
+        );
+        if (!cancelled) setGasEstimate(est);
+      } catch {
+        if (!cancelled) setGasEstimate(null);
+      }
+    };
+    void run();
+    return () => { cancelled = true; };
+  }, [publicClient, wallet.address, selectedChain, selectedTokenOption, quote]);
+
   useEffect(() => {
     let cancelled = false;
     setTokenBalance(null);
@@ -289,8 +337,10 @@ export function Web3SettleTopUpModal({
     if (!canPay || !selectedChain || !selectedToken || !quote || !effectiveAmount) return;
     void startPayment(effectiveAmount, selectedChain, selectedToken, {
       atomicAmount: quote.amountToken,
+      onTelemetry: config.onTelemetry,
+      contractVersion: config.contractVersion,
     });
-  }, [canPay, selectedChain, selectedToken, quote, effectiveAmount, startPayment]);
+  }, [canPay, selectedChain, selectedToken, quote, effectiveAmount, startPayment, config.onTelemetry, config.contractVersion]);
 
   if (!isOpen) return null;
 
@@ -457,6 +507,7 @@ export function Web3SettleTopUpModal({
                 quoteLoading={quoteLoading}
                 quoteError={quoteError}
                 tokenBalance={tokenBalance}
+                gasEstimate={gasEstimate}
               />
 
               {/* Inline error from a previously failed payment attempt. */}
@@ -629,6 +680,7 @@ function QuotePanel({
   quoteLoading,
   quoteError,
   tokenBalance,
+  gasEstimate,
 }: {
   amountUsd: number | null;
   tokenOption: TokenOption | null;
@@ -636,6 +688,7 @@ function QuotePanel({
   quoteLoading: boolean;
   quoteError: string | null;
   tokenBalance: string | null;
+  gasEstimate: GasEstimate | null;
 }) {
   const insufficientBalance = useMemo(() => {
     if (!quote || !tokenBalance) return false;
@@ -718,6 +771,16 @@ function QuotePanel({
         </span>
         <span className="w3s-text-[11px] w3s-text-slate-500 w3s-font-mono">{quote.source}</span>
       </div>
+      {gasEstimate && (
+        <div className="w3s-flex w3s-justify-between w3s-items-baseline">
+          <span className="w3s-text-[11px] w3s-text-slate-500">Network fee</span>
+          <span className="w3s-text-[11px] w3s-text-slate-300">
+            {typeof gasEstimate.usd === 'number'
+              ? `≈ $${gasEstimate.usd < 0.01 ? gasEstimate.usd.toFixed(4) : gasEstimate.usd.toFixed(2)}`
+              : '—'}
+          </span>
+        </div>
+      )}
       {insufficientBalance && (
         <div className="w3s-flex w3s-items-center w3s-gap-2 w3s-pt-1 w3s-border-t w3s-border-white/5">
           <AlertIcon className="w3s-h-3.5 w3s-w-3.5 w3s-text-amber-400" />
