@@ -120,8 +120,12 @@
     "wagmi": "^2.14.0"
   },
   "overrides": {
-    "axios": "^1.15.0",
-    "hono": "^4.12.14",
+    "axios": "^1.16.0",
+    "hono": "^4.12.18",
+    "fast-uri": "^3.1.2",
+    "rpc-websockets": {
+      "uuid": "^11.1.1"
+    },
     "lodash": "^4.18.1",
     "follow-redirects": "^1.16.0",
     "esbuild": "^0.25.0"
