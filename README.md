@@ -9,6 +9,8 @@ React component library for accepting crypto payments via Web3Settle. Drop in a 
 | `@web3settle/merchant-sdk` | EVM (Ethereum / Polygon / Base) provider + button + modal + hooks | `wagmi`, `viem`, `@wagmi/core`, `@tanstack/react-query` |
 | `@web3settle/merchant-sdk/solana` | Solana provider + button + modal + hooks + PDA helpers + raw instruction builders | `@solana/web3.js`, `@solana/wallet-adapter-base`, `@solana/wallet-adapter-react`, plus the wallet-specific adapter packages you want (Phantom, Solflare, …) |
 | `@web3settle/merchant-sdk/tron` | TRON provider + button + modal + hooks (TronLink-backed) | TronLink browser extension at runtime. The `tronweb` package is a peer for TypeScript types only — the SDK uses the extension's injected `window.tronWeb` |
+| `@web3settle/merchant-sdk/headless` | Framework-agnostic controllers (`createPayButtonController`, `createWalletConnectController`, `createGasEstimateController`) — V0.5.0 — for Vue / Svelte / vanilla JS callers | None beyond your chain-stack peers above |
+| `@web3settle/merchant-sdk/wc` | `<web3settle-pay-button>` native HTMLElement built on top of the headless layer — V0.5.0 | None beyond your chain-stack peers above |
 
 EVM-only consumers never pay the bundle cost of the Solana / TRON stacks; Solana-only consumers never pull wagmi. Import only the subpaths you need.
 
@@ -17,11 +19,14 @@ EVM-only consumers never pay the bundle cost of the Solana / TRON stacks; Solana
 - Five chains across three stacks: **Ethereum, Polygon, Base** (wagmi + viem), **Solana** (wallet-adapter + web3.js), **TRON** (TronLink)
 - Unified `PaymentPipeline` interface so all three stacks present the same `quoteAmount → needsApproval → approve → execute → waitForReceipt` surface
 - Native currency and fungible-token payments on every chain
-- **EVM:** ERC-20 approval flow with exact-amount allowance (never unlimited)
+- **EVM:** ERC-20 approval flow with exact-amount allowance (never unlimited). **EIP-712 permit** (V0.5.0 / segment 14.6) — when the token implements EIP-2612 the SDK signs the typed-data permit and submits `permit(...)` directly, saving the user one popup and ~$0.50 of gas.
 - **Solana:** no-approval direct transfer; PDA derivation + hand-rolled Anchor instruction builders bundled (no `@coral-xyz/anchor` dependency)
 - **TRON:** TRC-20 approve + pay, `SafeTRC20`-aware for non-return-value tokens like USDT-TRON
 - Built-in wallet connection per chain (injected + WalletConnect on EVM; Phantom / Solflare / Backpack on Solana; TronLink)
 - Real-time transaction status tracking with reorg-aware confirmation counts
+- **Gas estimator** (V0.5.0 / segment 14.1) — `estimateEvmGas`, `estimateSolanaGas`, `estimateTronGas` — single `GasEstimate` shape across all three chains; the modal renders a `≈ $X` network-fee badge
+- **Telemetry breadcrumbs** (V0.5.0 / segment 14.2) — opt-in `onTelemetry` callback emits a privacy-redacted event per failed pay-in (no plain addresses, no amounts; PII-redacted message ≤240 chars)
+- **Headless layer + Web Components** (V0.5.0 / segment 14.5) — `@web3settle/merchant-sdk/headless` and `@web3settle/merchant-sdk/wc` (`<web3settle-pay-button>` native HTMLElement) for Vue / Svelte / vanilla JS callers
 - CoinGecko price feeds with in-memory caching + stale-while-revalidate fallback
 - Dark theme glassmorphism UI with CSS-variable hooks for theming
 - Zod-validated API responses at every boundary
@@ -581,7 +586,7 @@ Modern evergreen browsers with ES2020 support (Chrome 94+, Firefox 93+, Safari 1
 npm install
 npm run dev          # Build with watch
 npm run build        # Production build (tsc + Vite lib)
-npm run test         # Run Vitest (61 tests)
+npm run test         # Run Vitest (12 test files, 150 tests)
 npm run typecheck    # tsc --noEmit
 npm run lint         # ESLint (flat config, strict type-checked)
 npm run audit:ci     # Fail on high/critical vulns
