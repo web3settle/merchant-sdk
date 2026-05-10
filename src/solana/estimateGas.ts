@@ -106,6 +106,7 @@ export async function estimateSolanaGas(
   // 1. Compute units via simulation. Some endpoints disallow `replaceRecentBlockhash`
   //    — we call it best-effort, fall back to the default.
   let computeUnits = DEFAULT_COMPUTE_UNITS;
+  let simulationOk = false;
   try {
     const tx = new Transaction().add(ix);
     tx.feePayer = input.sender;
@@ -119,12 +120,14 @@ export async function estimateSolanaGas(
     if (typeof consumed === 'number' && consumed > 0) {
       computeUnits = consumed;
     }
+    simulationOk = true;
   } catch {
     // Keep DEFAULT_COMPUTE_UNITS — surface a conservative estimate.
   }
 
   // 2. Median priority fee across recent blocks. Returns micro-lamports per CU.
   let microLamportsPerCu = 0;
+  let priorityOk = false;
   try {
     const recent = await input.connection.getRecentPrioritizationFees();
     if (Array.isArray(recent) && recent.length > 0) {
@@ -137,8 +140,23 @@ export async function estimateSolanaGas(
         microLamportsPerCu = sorted[Math.floor(sorted.length / 2)] ?? 0;
       }
     }
+    // The RPC succeeded even when it returned an empty array (a healthy
+    // cluster with no congestion). Treat that as "priority data confirmed
+    // zero" rather than "RPC down".
+    priorityOk = true;
   } catch {
     // Networks that don't support the RPC just skip priority — base fee still applies.
+  }
+
+  // If BOTH dynamic sources failed, the only thing we'd be returning is the
+  // static 5000-lamport signature fee — i.e. "≈ $0.001" — which is misleading
+  // when the cluster might actually be congested. Throw so the modal can fall
+  // back to a "fee unavailable" UI rather than render a fake-looking number.
+  if (!simulationOk && !priorityOk) {
+    throw new Error(
+      'Solana fee estimate unavailable: both simulateTransaction and ' +
+        'getRecentPrioritizationFees failed. The caller should surface "fee unavailable".',
+    );
   }
 
   // 3. Total lamports = base + (priority µLAM/CU × CU) / 1e6.

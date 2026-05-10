@@ -107,6 +107,20 @@ const EIP2612_ABI = [
 /** Default DAI/USDC/USDT permit version when the token doesn't expose `version()`. */
 const DEFAULT_PERMIT_VERSION = '1';
 
+/**
+ * Maximum permit deadline window the SDK will sign — 60 minutes from now.
+ *
+ * Defence-in-depth against a caller passing `Number.MAX_SAFE_INTEGER` (or any
+ * sufficiently large value) as a deadline, which would effectively be a "no
+ * expiry" permit. EIP-2612 permits are bearer instruments: a leaked signature
+ * with a far-future deadline is replayable on-chain until the nonce
+ * increments, so we cap the window aggressively. Most flows want ≤30 minutes;
+ * the 60-minute cap leaves headroom for mobile-wallet round-trips while still
+ * limiting blast radius if the signed payload escapes (e.g. logged in the
+ * user's wallet history).
+ */
+export const MAX_PERMIT_DEADLINE_WINDOW_SECONDS = 60 * 60;
+
 export interface PermitSupport {
   /** Whether the token responds to all four EIP-2612 view calls. */
   supported: boolean;
@@ -245,13 +259,30 @@ export function buildPermitTypedData(input: Omit<SignPermitInput, 'walletClient'
 }
 
 /**
- * Validates the deadline isn't already in the past. Returns the same value
- * for ergonomics so callers can chain.
+ * Validates the deadline isn't already in the past, AND isn't unreasonably
+ * far in the future (which would make a leaked signature replayable for years
+ * until the nonce increments). Both bounds are required: an `Number.MAX_SAFE_INTEGER`
+ * deadline is technically "in the future" but acts as a no-expiry bearer
+ * token, defeating the EIP-2612 deadline mechanism.
+ *
+ * Returns the same value for ergonomics so callers can chain.
  */
-export function assertDeadlineFresh(deadline: bigint, nowSeconds = Math.floor(Date.now() / 1000)): bigint {
+export function assertDeadlineFresh(
+  deadline: bigint,
+  nowSeconds = Math.floor(Date.now() / 1000),
+  maxWindowSeconds: number = MAX_PERMIT_DEADLINE_WINDOW_SECONDS,
+): bigint {
   if (deadline <= BigInt(nowSeconds)) {
     throw new Error(
       `Permit deadline ${deadline.toString()} is not in the future (now=${nowSeconds}).`,
+    );
+  }
+  const maxDeadline = BigInt(nowSeconds) + BigInt(maxWindowSeconds);
+  if (deadline > maxDeadline) {
+    throw new Error(
+      `Permit deadline ${deadline.toString()} exceeds the SDK cap of ` +
+        `${maxWindowSeconds}s from now (max=${maxDeadline.toString()}). ` +
+        `Permit signatures are bearer instruments — keep deadlines short.`,
     );
   }
   return deadline;
@@ -283,6 +314,15 @@ export function isPermitDomainKnown(
  * before any wallet popup. Unknown tokens raise {@link UnknownPermitTokenError}.
  * Callers using `permit: 'auto'` should call {@link isPermitDomainKnown} first
  * and fall back to `approve()` rather than catching this error.
+ *
+ * Hardenings beyond the EIP-712 spec basics:
+ *   - rejects deadlines in the past or beyond {@link MAX_PERMIT_DEADLINE_WINDOW_SECONDS};
+ *   - cross-validates `input.chainId` against the wallet's live `getChainId()`
+ *     so a stale config can't end up signing a payload that's then replayable
+ *     on a different chain;
+ *   - re-runs {@link validatePermitSignature} on the wallet's reply before
+ *     returning (catches corrupt signatures earlier than the token contract
+ *     would).
  */
 export async function signPermit(input: SignPermitInput): Promise<PermitSignature> {
   assertDeadlineFresh(input.deadline);
@@ -305,6 +345,20 @@ export async function signPermit(input: SignPermitInput): Promise<PermitSignatur
     );
   }
 
+  // Cross-check the chainId we're about to embed in the EIP-712 domain
+  // against the wallet's live chain. If they disagree (e.g. the user
+  // switched chains in their wallet between our `switchChainAsync` call and
+  // here, or the caller passed a config-constant rather than a live value),
+  // the resulting signature would be replayable on the *wallet's* chain
+  // rather than the one we think we're paying on. Refuse to sign.
+  const walletChainId = await input.walletClient.getChainId().catch(() => undefined);
+  if (typeof walletChainId === 'number' && walletChainId !== input.chainId) {
+    throw new Error(
+      `Wallet chainId ${walletChainId} does not match permit chainId ${input.chainId} — ` +
+        `refusing to sign. The caller likely needs to switch the wallet to chain ${input.chainId} first.`,
+    );
+  }
+
   // viem's signTypedData returns a 0x-prefixed 65-byte hex string.
   const signature = await input.walletClient.signTypedData({
     account,
@@ -315,6 +369,14 @@ export async function signPermit(input: SignPermitInput): Promise<PermitSignatur
   });
   if (!isHex(signature) || signature.length !== 132) {
     throw new Error(`Wallet returned an unexpected signature length: ${String(signature)}`);
+  }
+
+  // Run shape validation (length, r/s != 0, low-s per EIP-2, v ∈ {0,1,27,28})
+  // before splitting and returning. Catches a malformed wallet response
+  // before the caller broadcasts an unrecoverable `permit(...)` tx.
+  const validation = validatePermitSignature(signature);
+  if (!validation.valid) {
+    throw new Error(`Wallet returned an invalid permit signature: ${validation.reason ?? 'unknown'}`);
   }
 
   // viem ≥2.21 ships `parseSignature` which gives us yParity-compatible v.

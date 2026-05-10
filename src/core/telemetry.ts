@@ -167,8 +167,21 @@ export function todayUtc(now: Date = new Date()): string {
 }
 
 /**
- * Strip values that look like wallet addresses, pubkeys, or UUIDs from a
- * developer error message. Keeps the message under 240 chars.
+ * Strip values that look like wallet addresses, pubkeys, UUIDs, filesystem
+ * paths, or long secrets from a developer error message. Keeps the message
+ * under 240 chars.
+ *
+ * The redaction list reflects what we've seen leak through `Error.message` /
+ * `Error.stack` in browser & Node SDKs:
+ *   - EVM addresses + tx hashes (caller's wallet, our contract).
+ *   - UUIDs (session ids).
+ *   - Solana / TRON base58 (caller's wallet).
+ *   - Absolute filesystem paths from stack traces (`/Users/`, `/home/`,
+ *     `C:\`, `file://`) — these reveal username and source-file layout when
+ *     the integrator pipes the message into a 3rd-party analytics pipeline.
+ *   - Long unbroken hex blobs (≥64 chars) — catches private keys, raw
+ *     signatures, or session tokens that occasionally surface in nested
+ *     wallet errors.
  */
 export function redactErrorMessage(message: string | undefined): string | undefined {
   if (!message) return undefined;
@@ -179,6 +192,18 @@ export function redactErrorMessage(message: string | undefined): string | undefi
     .replace(/0x[a-fA-F0-9]{64}/g, '0x<redacted>')
     // UUID-shaped strings
     .replace(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g, '<uuid>')
+    // POSIX absolute paths (`/Users/alice/...`, `/home/bob/...`, `/private/tmp/...`).
+    // Catches stack-trace fragments that leak the integrator's username.
+    .replace(/\/(?:Users|home|root|private|var|opt|srv|tmp)\/[^\s)"']+/gi, '<path>')
+    // Windows-style absolute paths (`C:\Users\...`).
+    .replace(/[A-Za-z]:\\[^\s)"']+/g, '<path>')
+    // file:// URLs from JS stack traces.
+    .replace(/file:\/\/[^\s)"']+/g, '<path>')
+    // Long bare hex blobs (≥64 chars). Catches private keys, raw 65-byte
+    // signatures, and session-token-shaped strings nested inside wallet
+    // error messages. The 64-char floor avoids false positives on shorter
+    // identifiers.
+    .replace(/(?:0x)?[a-fA-F0-9]{64,}/g, '<hex>')
     // Solana / TRON base58 (32–44 chars, no 0/O/I/l) — be conservative, only
     // redact when the substring is a standalone token (whitespace bounded).
     .replace(/(^|\s)[1-9A-HJ-NP-Za-km-z]{32,44}(?=\s|[,.;:]|$)/g, '$1<addr>');

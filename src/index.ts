@@ -35,6 +35,7 @@ export {
   isPermitDomainKnown,
   permitDomainKey,
   UnknownPermitTokenError,
+  MAX_PERMIT_DEADLINE_WINDOW_SECONDS,
 } from './evm/permit';
 export type {
   PermitSupport,

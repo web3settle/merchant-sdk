@@ -128,6 +128,22 @@ describe('estimateSolanaGas (native)', () => {
     expect(out.native).toBe(LAMPORTS_PER_SIGNATURE);
   });
 
+  it('throws when BOTH simulate and getRecentPrioritizationFees fail', async () => {
+    // When both dynamic sources are unavailable the only thing left is the
+    // 5000-lamport signature fee, which would render "≈ $0.001" and be
+    // misleading on a congested cluster. The estimator should refuse rather
+    // than silently produce a fake-looking number.
+    const conn = mockConnection({ simulateError: true, feesError: true });
+    await expect(estimateSolanaGas({
+      connection: conn,
+      sender: SENDER,
+      programId: PROGRAM_ID,
+      merchantId: MERCHANT_ID,
+      token: NATIVE_TOKEN_SENTINEL,
+      amount: 1n,
+    })).rejects.toThrow(/Solana fee estimate unavailable/);
+  });
+
   it('converts lamports to USD when a priceUsd oracle is supplied', async () => {
     const conn = mockConnection({ unitsConsumed: 50_000, prioritization: [] });
     const out = await estimateSolanaGas(
