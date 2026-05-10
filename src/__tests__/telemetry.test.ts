@@ -67,6 +67,37 @@ describe('redactErrorMessage', () => {
     expect(out.length).toBeLessThanOrEqual(240);
     expect(out.endsWith('...')).toBe(true);
   });
+
+  it('redacts POSIX absolute paths from stack-trace fragments', () => {
+    const msg = 'TypeError at /Users/alice/src/wallet/index.ts:42';
+    const out = redactErrorMessage(msg) ?? '';
+    expect(out).not.toContain('/Users/alice');
+    expect(out).toContain('<path>');
+  });
+
+  it('redacts Windows absolute paths', () => {
+    const msg = 'Failed loading C:\\Users\\bob\\AppData\\Local\\app\\index.js';
+    const out = redactErrorMessage(msg) ?? '';
+    expect(out).not.toMatch(/C:\\Users\\bob/);
+    expect(out).toContain('<path>');
+  });
+
+  it('redacts file:// URLs', () => {
+    const msg = 'thrown at file:///home/vscode/workspace/x/y.ts:10:5';
+    const out = redactErrorMessage(msg) ?? '';
+    expect(out).not.toContain('file:///home');
+    expect(out).toContain('<path>');
+  });
+
+  it('redacts long unbroken hex blobs (private-key shaped)', () => {
+    // A 64+ char hex run is consistent with a raw private key, raw signature,
+    // or session token. Strip rather than risk leaking via 3rd-party
+    // analytics.
+    const msg = 'leaked secret 0x' + 'ab'.repeat(40); // 80 hex chars, way past the floor
+    const out = redactErrorMessage(msg) ?? '';
+    expect(out).not.toMatch(/ab{20,}/i);
+    expect(out).toContain('<');
+  });
 });
 
 describe('hashWalletAddress', () => {
