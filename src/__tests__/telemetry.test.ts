@@ -95,6 +95,29 @@ describe('hashWalletAddress', () => {
     const upper = await hashWalletAddress('0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48');
     expect(lower).toBe(upper);
   });
+
+  // Premortem F8: the digest is salted by storefrontId+day so two shops can't
+  // join their digest tables to unmask shared wallets.
+  it('produces distinct digests for two storefronts of the same wallet (same day)', async () => {
+    const day = '2026-05-10';
+    const addr = '0xA0b86991C6218b36c1d19D4a2e9Eb0cE3606eB48';
+    const shop1 = await hashWalletAddress(addr, 'storefront-aaaa', day);
+    const shop2 = await hashWalletAddress(addr, 'storefront-bbbb', day);
+    expect(shop1).not.toBe(shop2);
+  });
+
+  it('is stable for the same storefront and day', async () => {
+    const a = await hashWalletAddress('0xa0b86991', 'storefront-x', '2026-05-10');
+    const b = await hashWalletAddress('0xa0b86991', 'storefront-x', '2026-05-10');
+    expect(a).toBe(b);
+  });
+
+  it('produces different digests for the same storefront on different days', async () => {
+    const addr = '0xa0b86991';
+    const today = await hashWalletAddress(addr, 'storefront-x', '2026-05-10');
+    const tomorrow = await hashWalletAddress(addr, 'storefront-x', '2026-05-11');
+    expect(today).not.toBe(tomorrow);
+  });
 });
 
 describe('safeEmit', () => {

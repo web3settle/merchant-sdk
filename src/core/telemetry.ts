@@ -108,15 +108,33 @@ export function safeEmit(
 
 /**
  * Hash a wallet address into a non-reversible 16-char hex digest using
- * SubtleCrypto. Fallback to a short FNV-1a-style hash when SubtleCrypto isn't
- * available (older Node/JSDOM contexts in tests). Always returns a string.
+ * SubtleCrypto, salted by storefrontId and the UTC day. Fallback to a short
+ * FNV-1a-style hash when SubtleCrypto isn't available (older Node/JSDOM
+ * contexts in tests). Always returns a string when the address is present.
+ *
+ * **Why salting (premortem F8).** A 64-bit truncated SHA-256 of the raw
+ * address is reversible against a small known userbase: an analyst with the
+ * shop's user list can rebuild the digest table and unmask wallets. The
+ * `(storefrontId, day)` salt re-keys the digest space per day per shop:
+ *   - Two shops of the same wallet get distinct digests → no cross-shop join.
+ *   - The same shop on different days gets distinct digests → analytics still
+ *     buckets a user across a day, but a leaked dataset can't be cross-day-
+ *     linked without the salt.
+ *
+ * Pass {@link todayUtc} to compute the day key the SDK uses internally.
  */
-export async function hashWalletAddress(address: string | null | undefined): Promise<string | undefined> {
+export async function hashWalletAddress(
+  address: string | null | undefined,
+  storefrontId?: string,
+  dayUtc?: string,
+): Promise<string | undefined> {
   if (!address) return undefined;
+  const salt = `${storefrontId ?? ''}:${dayUtc ?? ''}:`;
+  const input = `${salt}${address.toLowerCase()}`;
   // Best path: SubtleCrypto SHA-256 → first 16 hex chars.
   if (typeof crypto !== 'undefined' && typeof crypto.subtle?.digest === 'function') {
     try {
-      const data = new TextEncoder().encode(address.toLowerCase());
+      const data = new TextEncoder().encode(input);
       const digest = await crypto.subtle.digest('SHA-256', data);
       const bytes = new Uint8Array(digest);
       let hex = '';
@@ -130,12 +148,22 @@ export async function hashWalletAddress(address: string | null | undefined): Pro
   }
   // Fallback: deterministic but weaker. Only for environments without SubtleCrypto.
   let hash = 0x811c9dc5;
-  const lower = address.toLowerCase();
-  for (let i = 0; i < lower.length; i += 1) {
-    hash ^= lower.charCodeAt(i);
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
     hash = (hash * 0x01000193) >>> 0;
   }
   return hash.toString(16).padStart(8, '0');
+}
+
+/**
+ * Day key for the wallet-digest salt. UTC `YYYY-MM-DD` so two SDK instances
+ * in different time zones agree on the bucket.
+ */
+export function todayUtc(now: Date = new Date()): string {
+  const yyyy = now.getUTCFullYear().toString().padStart(4, '0');
+  const mm = (now.getUTCMonth() + 1).toString().padStart(2, '0');
+  const dd = now.getUTCDate().toString().padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 /**

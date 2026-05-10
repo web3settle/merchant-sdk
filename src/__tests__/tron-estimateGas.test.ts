@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import {
   estimateTronGas,
   computeTronCost,
   DEFAULT_SUN_PER_ENERGY,
+  fetchCurrentSunPerEnergy,
+  clearSunPerEnergyCache,
 } from '../tron/estimateGas';
 import { NATIVE_TOKEN_SENTINEL } from '../core/types';
 import type { TronWebLike } from '../tron/tronweb-global';
@@ -38,6 +40,14 @@ function mockTronWeb(opts: MockTronInit): TronWebLike {
 
 afterEach(() => {
   delete (globalThis as unknown as { window: unknown }).window;
+  clearSunPerEnergyCache();
+  vi.restoreAllMocks();
+});
+
+beforeEach(() => {
+  // Stub global fetch so tests that don't pass `sunPerEnergy` don't escape to
+  // the live TronGrid endpoint when the new dynamic refresh path runs.
+  vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('test: fetch disabled'));
 });
 
 describe('estimateTronGas', () => {
@@ -46,16 +56,19 @@ describe('estimateTronGas', () => {
       energyUsed: 30_000,
       rawDataHex: '00'.repeat(270), // 270 byte placeholder tx
     });
+    // Default path: fetchOverride throws → falls back to DEFAULT_SUN_PER_ENERGY.
+    const fetchFail = vi.fn().mockRejectedValue(new Error('no network in tests'));
     const out = await estimateTronGas(
       {
         contractAddress: VALID_T_ADDR,
         token: NATIVE_TOKEN_SENTINEL,
         amount: 1_000_000n,
         tronWebOverride: tw,
+        fetchOverride: fetchFail as unknown as typeof fetch,
       },
-      { sunPerEnergy: 280 } as never, // sunPerEnergy lives on input — passing here is a typecheck noop
     );
-    // We pass sunPerEnergy via the input, not the fee oracle. Re-run with input:
+    clearSunPerEnergyCache();
+    // Explicit sunPerEnergy short-circuits the fetch.
     const out2 = await estimateTronGas({
       contractAddress: VALID_T_ADDR,
       token: NATIVE_TOKEN_SENTINEL,
@@ -67,7 +80,7 @@ describe('estimateTronGas', () => {
     expect(out2.native).toBe(8_400_270);
     expect((out2.breakdown as { energy: number; bandwidth: number }).energy).toBe(30_000);
     expect((out2.breakdown as { bandwidth: number }).bandwidth).toBe(270);
-    // First call (without sunPerEnergy override) should use the default rate.
+    // First call (without sunPerEnergy override) falls back to the default rate.
     expect(out.native).toBe(30_000 * DEFAULT_SUN_PER_ENERGY + 270);
   });
 
@@ -145,5 +158,43 @@ describe('computeTronCost', () => {
   it('uses DEFAULT_SUN_PER_ENERGY when omitted', () => {
     const out = computeTronCost(40_000, 270);
     expect(out.energySun).toBe(40_000 * DEFAULT_SUN_PER_ENERGY);
+  });
+});
+
+// Premortem F6: dynamic sun-per-energy refresh — the hardcoded 280 stops being
+// the truth the moment Witnesses raise the rate.
+describe('fetchCurrentSunPerEnergy', () => {
+  afterEach(() => clearSunPerEnergyCache());
+
+  it('parses the rightmost rate from TronGrid /wallet/getenergyprices', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ prices: '0:100,1542607200000:10,1606537500000:40,1697461200000:420' }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    const value = await fetchCurrentSunPerEnergy(fetchMock as unknown as typeof fetch);
+    expect(value).toBe(420);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('caches the value across subsequent calls within the TTL window', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ prices: '1697461200000:330' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    const a = await fetchCurrentSunPerEnergy(fetchMock as unknown as typeof fetch);
+    const b = await fetchCurrentSunPerEnergy(fetchMock as unknown as typeof fetch);
+    expect(a).toBe(330);
+    expect(b).toBe(330);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to DEFAULT_SUN_PER_ENERGY when TronGrid fails', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('rpc down'));
+    const value = await fetchCurrentSunPerEnergy(fetchMock as unknown as typeof fetch);
+    expect(value).toBe(DEFAULT_SUN_PER_ENERGY);
   });
 });

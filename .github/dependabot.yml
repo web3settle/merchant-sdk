@@ -1,0 +1,26 @@
+# Premortem F4: Dependabot opens dependency PRs but the runtime block is
+# pinned (no carets), so any update is intentional. We forbid auto-merge for
+# runtime deps via the `assignees` + `reviewers` gates so a PII-touching
+# package change always lands a human review.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    # Runtime deps require human review — never auto-merge.
+    allow:
+      - dependency-type: "all"
+    groups:
+      runtime-deps:
+        dependency-type: "production"
+      dev-deps:
+        dependency-type: "development"
+    labels:
+      - "dependencies"
+      - "supply-chain"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"

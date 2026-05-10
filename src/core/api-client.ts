@@ -1,14 +1,16 @@
 import {
-  PaymentConfigSchema,
   PaymentSessionSchema,
   CreateSessionResponseSchema,
   QuoteResponseSchema,
+  SignedPaymentConfigEnvelopeSchema,
   Web3SettleApiError,
   type PaymentConfig,
   type PaymentSession,
   type CreateSessionResponse,
   type QuoteResponse,
 } from './types';
+import { verifyPaymentConfig } from './payment-config-verifier';
+import { SUPPORTED_ABI_VERSIONS, KNOWN_CONTRACT_ADDRESSES } from './config';
 
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -46,7 +48,60 @@ export class Web3SettleApiClient {
       `api/storefronts/${this.storefrontId}/payment-config`,
       { signal },
     );
-    return this.parse(raw, PaymentConfigSchema, 'payment config');
+    // Step 1: shape-validate the envelope (data + signedAt + signature).
+    const envelope = this.parse(raw, SignedPaymentConfigEnvelopeSchema, 'payment config envelope');
+
+    // Step 2: cryptographic provenance — the signature must verify against a
+    // baked-in Ed25519 public key over `signed_at + canonical_json(data)`. A
+    // poisoned-DNS / CDN-edge MITM that substitutes contract addresses cannot
+    // forge this without the private key in Vault.
+    const verify = verifyPaymentConfig({
+      data: envelope.data,
+      signed_at: envelope.signedAt,
+      signature: envelope.signature,
+    });
+    if (!verify.ok) {
+      throw new Web3SettleApiError(
+        `Refusing payment-config response: signature verification failed (${verify.reason}${verify.detail ? `: ${verify.detail}` : ''}). The SDK will not build a transaction against an unverified contract address.`,
+        0,
+        { reason: verify.reason },
+      );
+    }
+
+    // Step 3: ABI-version handshake (Phase 7). Fail closed when the backend
+    // has rolled forward to a revision the SDK can't speak — calldata would
+    // revert silently otherwise.
+    if (!SUPPORTED_ABI_VERSIONS.has(envelope.data.contractAbiVersion)) {
+      throw new Web3SettleApiError(
+        `Unsupported contractAbiVersion "${envelope.data.contractAbiVersion}" — upgrade @web3settle/merchant-sdk to a release that supports this version.`,
+        0,
+        { abiVersion: envelope.data.contractAbiVersion },
+      );
+    }
+
+    // Step 4: contract-address allowlist (Phase 3). The SDK refuses to build
+    // calldata for a contract address that is neither in the baked-in
+    // KNOWN_CONTRACT_ADDRESSES nor explicitly elevated by the signed payload.
+    // Backend compromise alone cannot redirect funds — a fresh address still
+    // requires an SDK release.
+    for (const chain of envelope.data.chains) {
+      const baked = KNOWN_CONTRACT_ADDRESSES[chain.chainId] ?? new Set<string>();
+      const elevated = new Set(
+        (envelope.data.allowedContractAddresses[String(chain.chainId)] ?? []).map((a) =>
+          a.toLowerCase(),
+        ),
+      );
+      const addrLower = chain.contractAddress.toLowerCase();
+      if (!baked.has(addrLower) && !elevated.has(addrLower)) {
+        throw new Web3SettleApiError(
+          `Refusing chain ${chain.chainId}: contractAddress "${chain.contractAddress}" is not in the SDK allowlist and was not explicitly elevated by the signed payload.`,
+          0,
+          { chainId: chain.chainId, address: addrLower },
+        );
+      }
+    }
+
+    return envelope.data;
   }
 
   async createTopUpSession(

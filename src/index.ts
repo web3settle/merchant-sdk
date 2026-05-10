@@ -32,6 +32,9 @@ export {
   buildPermitTypedData,
   validatePermitSignature,
   assertDeadlineFresh,
+  isPermitDomainKnown,
+  permitDomainKey,
+  UnknownPermitTokenError,
 } from './evm/permit';
 export type {
   PermitSupport,
@@ -45,6 +48,7 @@ export {
   hashWalletAddress,
   redactErrorMessage,
   safeEmit,
+  todayUtc,
 } from './core/telemetry';
 export type {
   TelemetryEvent,
@@ -102,7 +106,16 @@ export {
   SESSION_POLL_INTERVAL_MS,
   MAX_POLL_ATTEMPTS,
   PRICE_CACHE_TTL_MS,
+  WEB3SETTLE_PAYMENT_CONFIG_PUBKEY_PRIMARY,
+  WEB3SETTLE_PAYMENT_CONFIG_PUBKEY_SECONDARY,
+  PAYMENT_CONFIG_MAX_AGE_MS,
+  KNOWN_CONTRACT_ADDRESSES,
+  SUPPORTED_ABI_VERSIONS,
+  KNOWN_PERMIT_TOKENS,
 } from './core/config';
+export { canonicalJson } from './core/canonical-json';
+export { verifyPaymentConfig } from './core/payment-config-verifier';
+export type { PaymentConfigVerifyResult, PaymentConfigVerifyFailure } from './core/payment-config-verifier';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 export {
@@ -114,6 +127,7 @@ export {
   PaymentSessionSchema,
   CreateSessionResponseSchema,
   Web3SettleConfigSchema,
+  SignedPaymentConfigEnvelopeSchema,
 } from './core/types';
 export type {
   TokenConfig,

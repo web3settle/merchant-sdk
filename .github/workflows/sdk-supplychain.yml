@@ -1,0 +1,67 @@
+name: SDK supply chain
+
+# Premortem F4 follow-on: even with caret-pinning fixed and a lockfile, npm
+# publishes can be hijacked by transitive compromise or registry spoofing.
+# This workflow:
+#   - asserts that runtime deps in package.json are exact-version (no `^`/`~`),
+#   - performs a `npm pack --provenance` dry-run so each PR proves the build
+#     can produce a provenance-signed tarball,
+#   - runs `npm ci --ignore-scripts` so postinstall scripts can't smuggle
+#     side-effects into CI worker images.
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # required for npm provenance
+
+concurrency:
+  group: sdk-supplychain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  enforce-pin:
+    name: Runtime deps must be exact-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject `^` / `~` in runtime dependencies
+        run: |
+          # Premortem F4: caret-pinning lets transitively-compromised minors
+          # land without review. This grep-fails fast on any caret/tilde in
+          # the runtime block — devDeps may still float.
+          node -e "
+            const pkg = require('./package.json');
+            const bad = Object.entries(pkg.dependencies || {}).filter(([_, v]) => /^[\^~]/.test(v));
+            if (bad.length) {
+              console.error('Floating runtime deps found (must be exact-version):');
+              for (const [n, v] of bad) console.error('  ' + n + ': ' + v);
+              process.exit(1);
+            }
+            console.log('All runtime deps are exact-version.');
+          "
+
+  provenance-pack:
+    name: npm pack --provenance dry run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          registry-url: 'https://npm.pkg.github.com'
+      - name: Install with locked, scriptless deps
+        run: npm ci --ignore-scripts
+      - name: Build dist/
+        run: npm run build
+      - name: Pack with provenance
+        # `--dry-run` so we don't push to the registry from PRs; the publish
+        # workflow (out-of-scope here) reuses the same flags without --dry-run.
+        run: npm pack --provenance --dry-run
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

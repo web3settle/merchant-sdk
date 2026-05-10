@@ -16,10 +16,11 @@ import {
   buildTelemetryEvent,
   hashWalletAddress,
   safeEmit,
+  todayUtc,
   type TelemetryCallback,
   type TelemetryPhase,
 } from '../core/telemetry';
-import { detectPermitSupport, signPermit } from '../evm/permit';
+import { detectPermitSupport, signPermit, isPermitDomainKnown, UnknownPermitTokenError } from '../evm/permit';
 import {
   defaultConfirmationPolicy,
   type ConfirmationPolicy,
@@ -43,6 +44,11 @@ interface StartPaymentOptions {
   walletId?: string;
   /** Contract version for telemetry. */
   contractVersion?: string;
+  /**
+   * Storefront identifier — folded into the wallet-digest salt so two shops
+   * of the same wallet do not produce the same digest (premortem F8).
+   */
+  storefrontId?: string;
   /**
    * EIP-2612 permit policy (item 14.6).
    *
@@ -141,7 +147,7 @@ export function usePayment(): UsePaymentReturn {
         if (!callback) return;
         const errMsg = rawErr instanceof Error ? rawErr.message : String(rawErr);
         const [signer] = await walletClient.getAddresses().catch(() => [undefined]);
-        const digest = await hashWalletAddress(signer);
+        const digest = await hashWalletAddress(signer, opts.storefrontId, todayUtc());
         safeEmit(callback, buildTelemetryEvent({
           chain: 'evm',
           phase,
@@ -238,6 +244,24 @@ export function usePayment(): UsePaymentReturn {
             phase = 'permit';
             const support = await detectPermitSupport(publicClient, tokenAddress, ownerAddress);
             if (support.supported && support.name && support.nonce !== undefined) {
+              // Premortem F3: do not silently sign permits for token domains
+              // we don't recognise. A typo-squat that returns name: "USD Coin"
+              // defeats the user's wallet review (the address is the only
+              // thing that differs). Auto path falls back to approve();
+              // require path raises so callers can surface the issue.
+              const versionToCheck = support.version ?? '1';
+              const known = isPermitDomainKnown(
+                support.name,
+                versionToCheck,
+                chain.chainId,
+                tokenAddress,
+              );
+              if (!known) {
+                if (permitMode === 'require') {
+                  throw new UnknownPermitTokenError();
+                }
+                // permitMode === 'auto': leave permitHandled=false → approve() path runs.
+              } else {
               const deadline = BigInt(
                 opts.permitDeadlineSeconds ?? Math.floor(Date.now() / 1000) + 30 * 60,
               );
@@ -264,6 +288,7 @@ export function usePayment(): UsePaymentReturn {
               });
               await waitForReceipt(publicClient, permitHash);
               permitHandled = true;
+              }
             } else if (permitMode === 'require') {
               throw new Error('Token does not support EIP-2612 permit');
             }
