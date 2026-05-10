@@ -32,6 +32,7 @@ export {
   buildPermitTypedData,
   validatePermitSignature,
   assertDeadlineFresh,
+  MAX_PERMIT_DEADLINE_WINDOW_SECONDS,
 } from './evm/permit';
 export type {
   PermitSupport,
