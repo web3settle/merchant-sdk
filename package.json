@@ -43,6 +43,7 @@
   },
   "files": [
     "dist",
+    "!dist/**/*.map",
     "LICENSE",
     "README.md",
     "CHANGELOG.md"
