@@ -65,3 +65,24 @@ jobs:
         run: npm pack --provenance --dry-run
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assert tarball ships no source / secrets
+        # SEC-DEP-006: the published tarball must carry only built `dist/`
+        # (JS/CJS + `.d.ts` types). A stray `.ts` SOURCE file or a `.env` would
+        # leak internals/secrets to every consumer. We inspect the dry-run file
+        # list and fail the job on any violation.
+        run: |
+          npm pack --dry-run --json > /tmp/pack.json
+          node -e "
+            const arr = JSON.parse(require('fs').readFileSync('/tmp/pack.json', 'utf8'));
+            const files = arr.flatMap((p) => (p.files || []).map((f) => f.path));
+            const tsSource = files.filter((f) => f.endsWith('.ts') && !f.endsWith('.d.ts'));
+            const envFiles = files.filter((f) => /(^|\/)\.env(\.|$)/.test(f));
+            const bad = [...tsSource, ...envFiles];
+            if (bad.length) {
+              console.error('Forbidden files in publish tarball (no .ts source / .env allowed):');
+              for (const f of bad) console.error('  ' + f);
+              process.exit(1);
+            }
+            console.log('Tarball clean: ' + files.length + ' files, no .ts source or .env.');
+          "

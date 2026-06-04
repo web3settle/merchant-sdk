@@ -173,9 +173,10 @@ export function todayUtc(now: Date = new Date()): string {
  *
  * The redaction list reflects what we've seen leak through `Error.message` /
  * `Error.stack` in browser & Node SDKs:
- *   - EVM addresses + tx hashes (caller's wallet, our contract).
+ *   - EVM addresses + tx hashes (caller's wallet, our contract), incl. a
+ *     bare 0x-less 40-hex address token.
  *   - UUIDs (session ids).
- *   - Solana / TRON base58 (caller's wallet).
+ *   - Solana / TRON base58 (caller's wallet), incl. a lone base58 token.
  *   - Absolute filesystem paths from stack traces (`/Users/`, `/home/`,
  *     `C:\`, `file://`) — these reveal username and source-file layout when
  *     the integrator pipes the message into a 3rd-party analytics pipeline.
@@ -190,6 +191,12 @@ export function redactErrorMessage(message: string | undefined): string | undefi
     .replace(/0x[a-fA-F0-9]{40}/g, '0x<redacted>')
     // EVM tx hashes (64 hex chars)
     .replace(/0x[a-fA-F0-9]{64}/g, '0x<redacted>')
+    // Bare 40-hex address token (an 0x-less EVM address that slipped through a
+    // nested wallet error). Word-boundary anchored to *exactly* 40 hex chars:
+    // the trailing `\b` fails to match when a 41st hex char follows, so this
+    // never bites into a 64-char tx-hash / private-key run (those are handled
+    // by the rules above and the long-hex rule below).
+    .replace(/\b[a-fA-F0-9]{40}\b/g, '<redacted>')
     // UUID-shaped strings
     .replace(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g, '<uuid>')
     // POSIX absolute paths (`/Users/alice/...`, `/home/bob/...`, `/private/tmp/...`).
@@ -204,9 +211,13 @@ export function redactErrorMessage(message: string | undefined): string | undefi
     // error messages. The 64-char floor avoids false positives on shorter
     // identifiers.
     .replace(/(?:0x)?[a-fA-F0-9]{64,}/g, '<hex>')
-    // Solana / TRON base58 (32–44 chars, no 0/O/I/l) — be conservative, only
-    // redact when the substring is a standalone token (whitespace bounded).
-    .replace(/(^|\s)[1-9A-HJ-NP-Za-km-z]{32,44}(?=\s|[,.;:]|$)/g, '$1<addr>');
+    // Solana / TRON base58 (26–44 chars, no 0/O/I/l) — only redact when the
+    // substring is a standalone token (whitespace/punct bounded), so we stay
+    // conservative on free text. Floor lowered from 32 to 26 so a lone base58
+    // wallet token (incl. shorter TRON-style / truncated pubkeys) is redacted
+    // when it stands alone, while still being far longer than any ordinary
+    // English word.
+    .replace(/(^|\s)[1-9A-HJ-NP-Za-km-z]{26,44}(?=\s|[,.;:]|$)/g, '$1<addr>');
   if (safe.length > 240) safe = `${safe.slice(0, 237)}...`;
   return safe;
 }
