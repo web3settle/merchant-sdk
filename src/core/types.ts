@@ -38,6 +38,32 @@ export const PaymentConfigSchema = z.object({
   chains: z.array(ChainConfigSchema).min(1),
   commissionBps: z.number().int().min(0).max(10_000),
   storefrontId: z.string().uuid(),
+  /**
+   * Contract ABI revision the backend currently serves. The SDK rejects
+   * payloads whose version is not in `SUPPORTED_ABI_VERSIONS` (fail closed).
+   * Defaults to the lowest supported revision when the backend hasn't
+   * populated the field yet (transition window).
+   */
+  contractAbiVersion: z.string().min(1).default('V3.1'),
+  /**
+   * Per-chain explicit contract-address allowlist. Map key is chainId as
+   * string; value is the lowercased addresses the SDK should accept for that
+   * chain even when the address is not in the SDK's baked-in
+   * KNOWN_CONTRACT_ADDRESSES set.
+   */
+  allowedContractAddresses: z.record(z.string(), z.array(z.string())).default({}),
+});
+
+/**
+ * Wrapper schema — the wire shape of `GET /api/storefronts/{id}/payment-config`
+ * since the F2 hardening. The SDK Zod-validates the wrapper, then verifies
+ * `signature` against `signed_at + canonical_json(data)` before unwrapping.
+ */
+export const SignedPaymentConfigEnvelopeSchema = z.object({
+  data: PaymentConfigSchema,
+  signedAt: z.string(),
+  signature: z.string().regex(/^[0-9a-fA-F]{128}$/, 'expected 128-char hex Ed25519 signature'),
+  publicKey: z.string().regex(/^[0-9a-fA-F]{64}$/).optional(),
 });
 
 // Server-issued USD→token quote returned by GET /api/storefronts/{id}/quote. The SDK uses
@@ -109,6 +135,12 @@ export interface Web3SettleConfig {
    * merchant can spot regressions caused by a contract upgrade.
    */
   contractVersion?: string;
+  /**
+   * EIP-2612 permit policy passed through to the EVM payment hook. See
+   * {@link signPermit} — `'auto'` is the default behaviour and falls back
+   * gracefully on tokens whose EIP-712 domain is not on the SDK's allowlist.
+   */
+  permit?: 'auto' | 'never' | 'require';
 }
 
 export enum PaymentStatus {

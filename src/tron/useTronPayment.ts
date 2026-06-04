@@ -6,6 +6,7 @@ import {
   buildTelemetryEvent,
   hashWalletAddress,
   safeEmit,
+  todayUtc,
   type TelemetryCallback,
   type TelemetryPhase,
 } from '../core/telemetry';
@@ -14,6 +15,8 @@ interface TronStartPaymentOpts {
   onTelemetry?: TelemetryCallback;
   walletId?: string;
   contractVersion?: string;
+  /** Storefront identifier — folded into the wallet-digest salt (premortem F8). */
+  storefrontId?: string;
 }
 
 interface UseTronPaymentReturn {
@@ -115,7 +118,7 @@ export function useTronPayment(): UseTronPaymentReturn {
       } catch (err) {
         if (opts.onTelemetry) {
           const errMsg = err instanceof Error ? err.message : String(err);
-          const digest = await hashWalletAddress(wallet.address);
+          const digest = await hashWalletAddress(wallet.address, opts.storefrontId, todayUtc());
           const errKind = err instanceof PaymentPipelineError ? err.kind : classifyError(err);
           safeEmit(opts.onTelemetry, buildTelemetryEvent({
             chain: 'tron',

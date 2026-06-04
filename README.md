@@ -570,11 +570,32 @@ All five use the same `MerchantPayIn` V3.0 contract model — immutable commissi
 ## Security notes
 
 - All API responses are validated with Zod schemas before use.
+- **Signed PaymentConfig (V0.5+).** `GET /payment-config` returns `{ data, signedAt, signature }`; the SDK refuses to build calldata unless the Ed25519 signature verifies against `WEB3SETTLE_PAYMENT_CONFIG_PUBKEY_PRIMARY` (or `_SECONDARY` during a rotation overlap) over `signedAt + canonical_json(data)`. The constants are baked into the SDK at release time so a poisoned-DNS or CDN-edge MITM that swaps the contract address cannot be silently honoured. The `.well-known/web3settle-config-pubkey` endpoint mirrors the constants for out-of-band drift checks.
+- **Contract allowlist.** The SDK refuses to call `payIn*` against any address that is neither in the baked-in `KNOWN_CONTRACT_ADDRESSES` nor explicitly elevated by the signed `allowedContractAddresses` map for the storefront. New canonical addresses require an SDK release.
+- **ABI version handshake.** The signed payload carries `contractAbiVersion`. The SDK fails closed when it sees a revision not in `SUPPORTED_ABI_VERSIONS`.
+- **Permit allowlist.** `permit: 'auto'` falls back to `approve()` for any token whose `(name, version, chainId, verifyingContract)` quadruple is not in the SDK's baked-in `KNOWN_PERMIT_TOKENS`. `permit: 'require'` raises `UnknownPermitTokenError` on unknown tokens. To add a token, compute `permitDomainKey(name, version, chainId, verifyingContract)` and PR the resulting hex digest into `core/config.ts`; the addition ships in the next SDK release.
+- **Salted telemetry digests.** `walletDigest` is salted by `(storefrontId, dayUtc)` so two storefronts of the same wallet cannot be cross-joined and the same shop's digests rotate every UTC day.
 - ERC-20 approvals request only the exact amount needed — **never** unlimited.
 - Transaction receipts are verified for `status === 'success'`; reverts surface as an `Error`.
 - Wallet connections use standard EIP-1193 providers via wagmi; the SDK does not read or persist private keys.
 - `Web3SettleApiClient` validates `storefrontId` + `sessionId` as UUIDs at construction time and builds URLs via the `URL` constructor (no string concat).
 - Modal: `role="dialog"` + `aria-modal` + focus restoration + ESC-key close. Click-outside closes on mouse but the Escape handler is always present for keyboard-only users.
+
+### Adding a token to the permit allowlist
+
+The `permit: 'auto'` path silently signs EIP-2612 permits only for tokens whose
+EIP-712 domain quadruple is on the SDK's allowlist. To add one:
+
+```ts
+import { permitDomainKey } from '@web3settle/merchant-sdk';
+console.log(permitDomainKey('USD Coin', '2', 1, '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'));
+// → "<64-char hex>"
+```
+
+Open a PR against `merchant-sdk/src/core/config.ts` adding the digest to
+`KNOWN_PERMIT_TOKENS`. Include in the PR body the source you used to verify the
+contract address (Etherscan label, official docs link). The merge ships in the
+next SDK release; backend deploys alone cannot expand the set.
 
 ## Browser support
 

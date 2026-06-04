@@ -30,6 +30,47 @@ import {
   isHex,
   parseSignature,
 } from 'viem';
+import { sha256 } from '@noble/hashes/sha256';
+import { KNOWN_PERMIT_TOKENS } from '../core/config';
+
+/**
+ * Stable identity for an EIP-712 token domain. Hash the lowercase
+ * `name|version|chainId|verifyingContract` quadruple so a typo-squatted token
+ * returning a fake `name()` doesn't collide with the real one — the
+ * `verifyingContract` differs and that's what makes the digest unique.
+ *
+ * Used by `permit: 'auto'` to refuse silently signing for an unknown token,
+ * and by the registry-update workflow to compute new entries for
+ * {@link KNOWN_PERMIT_TOKENS}.
+ */
+export function permitDomainKey(
+  name: string,
+  version: string,
+  chainId: number,
+  verifyingContract: string,
+): string {
+  const input = `${name}|${version}|${chainId}|${verifyingContract.toLowerCase()}`;
+  const bytes = sha256(new TextEncoder().encode(input));
+  let hex = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    hex += (bytes[i] ?? 0).toString(16).padStart(2, '0');
+  }
+  return hex;
+}
+
+/**
+ * Thrown by {@link signPermit} (and its callers) when `permit: 'require'` is
+ * set for a token whose EIP-712 domain quadruple is not in the SDK's baked-in
+ * {@link KNOWN_PERMIT_TOKENS} set. Telemetry-safe — the message names the
+ * error code only.
+ */
+export class UnknownPermitTokenError extends Error {
+  public readonly code = 'UnknownPermitToken' as const;
+  constructor(message = 'Refusing to sign permit for unknown EIP-712 domain') {
+    super(message);
+    this.name = 'UnknownPermitTokenError';
+  }
+}
 
 /** Minimal EIP-2612 ABI we read for detection. */
 const EIP2612_ABI = [
@@ -248,8 +289,31 @@ export function assertDeadlineFresh(
 }
 
 /**
+ * Whether the given EIP-712 token domain is on the SDK's baked-in trust list
+ * (`KNOWN_PERMIT_TOKENS`). Returns `true` only for explicit known-good
+ * (name, version, chainId, verifyingContract) quadruples. Used by the
+ * `permit: 'auto'` path to fall back to `approve()` for unknown tokens
+ * (premortem F3) — the user's wallet review is the last line of defence and
+ * a typo-squat that returns `name: "USD Coin"` defeats it.
+ */
+export function isPermitDomainKnown(
+  name: string,
+  version: string,
+  chainId: number,
+  verifyingContract: string,
+): boolean {
+  const key = permitDomainKey(name, version, chainId, verifyingContract);
+  return KNOWN_PERMIT_TOKENS.has(key);
+}
+
+/**
  * Ask the wallet to sign the EIP-2612 permit. Splits the resulting 65-byte
  * signature into v/r/s the caller can pass to the token's `permit(...)` tx.
+ *
+ * The token domain quadruple is validated against {@link KNOWN_PERMIT_TOKENS}
+ * before any wallet popup. Unknown tokens raise {@link UnknownPermitTokenError}.
+ * Callers using `permit: 'auto'` should call {@link isPermitDomainKnown} first
+ * and fall back to `approve()` rather than catching this error.
  *
  * Hardenings beyond the EIP-712 spec basics:
  *   - rejects deadlines in the past or beyond {@link MAX_PERMIT_DEADLINE_WINDOW_SECONDS};
@@ -262,6 +326,14 @@ export function assertDeadlineFresh(
  */
 export async function signPermit(input: SignPermitInput): Promise<PermitSignature> {
   assertDeadlineFresh(input.deadline);
+
+  const tokenVersion = input.tokenVersion ?? DEFAULT_PERMIT_VERSION;
+  if (!isPermitDomainKnown(input.tokenName, tokenVersion, input.chainId, input.tokenAddress)) {
+    throw new UnknownPermitTokenError(
+      `Refusing to sign EIP-2612 permit for unknown token domain (chainId=${input.chainId}). ` +
+      'Add the (name, version, chainId, verifyingContract) quadruple to KNOWN_PERMIT_TOKENS in a future SDK release if it is genuinely safe.',
+    );
+  }
 
   const typedData = buildPermitTypedData(input);
 

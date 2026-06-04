@@ -57,6 +57,20 @@ describe('redactErrorMessage', () => {
     expect(out).toMatch(/<addr>/);
   });
 
+  // SEC-LEAK-004: a wallet error can carry a *bare* (0x-less) 40-hex EVM
+  // address and a *lone* base58 wallet token — both must be stripped so they
+  // can't reach a 3rd-party analytics pipeline.
+  it('redacts a bare 40-hex token and a lone base58 token from a wallet error', () => {
+    const bareHexAddr = 'a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'; // 40 hex chars, no 0x
+    const loneBase58 = 'PVtSuPxCMC8gXSyfuwBkXk1JLPvmkm'; // 30-char base58 (below old 32 floor)
+    const msg = `transfer from ${bareHexAddr} to ${loneBase58} failed`;
+    const out = redactErrorMessage(msg) ?? '';
+    expect(out).not.toContain(bareHexAddr);
+    expect(out).not.toContain(loneBase58);
+    expect(out).toContain('<redacted>'); // bare-hex rule
+    expect(out).toContain('<addr>'); // lowered-floor base58 rule
+  });
+
   it('returns undefined for undefined input', () => {
     expect(redactErrorMessage(undefined)).toBeUndefined();
   });
@@ -125,6 +139,29 @@ describe('hashWalletAddress', () => {
     const lower = await hashWalletAddress('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48');
     const upper = await hashWalletAddress('0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48');
     expect(lower).toBe(upper);
+  });
+
+  // Premortem F8: the digest is salted by storefrontId+day so two shops can't
+  // join their digest tables to unmask shared wallets.
+  it('produces distinct digests for two storefronts of the same wallet (same day)', async () => {
+    const day = '2026-05-10';
+    const addr = '0xA0b86991C6218b36c1d19D4a2e9Eb0cE3606eB48';
+    const shop1 = await hashWalletAddress(addr, 'storefront-aaaa', day);
+    const shop2 = await hashWalletAddress(addr, 'storefront-bbbb', day);
+    expect(shop1).not.toBe(shop2);
+  });
+
+  it('is stable for the same storefront and day', async () => {
+    const a = await hashWalletAddress('0xa0b86991', 'storefront-x', '2026-05-10');
+    const b = await hashWalletAddress('0xa0b86991', 'storefront-x', '2026-05-10');
+    expect(a).toBe(b);
+  });
+
+  it('produces different digests for the same storefront on different days', async () => {
+    const addr = '0xa0b86991';
+    const today = await hashWalletAddress(addr, 'storefront-x', '2026-05-10');
+    const tomorrow = await hashWalletAddress(addr, 'storefront-x', '2026-05-11');
+    expect(today).not.toBe(tomorrow);
   });
 });
 

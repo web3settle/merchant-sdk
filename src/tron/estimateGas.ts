@@ -28,6 +28,12 @@ export const DEFAULT_SUN_PER_ENERGY = 280;
 const TRX_DECIMALS = 6;
 /** Conservative default transaction byte size when we can't read it. */
 const DEFAULT_TX_BANDWIDTH_BYTES = 270;
+/** TronGrid endpoint that returns the current sun-per-energy schedule. */
+const TRONGRID_ENERGY_PRICES_URL = 'https://api.trongrid.io/wallet/getenergyprices';
+/** Cache TTL for the dynamic sun-per-energy lookup. Set tight enough that a
+ *  Witness fee bump propagates to fresh estimates within minutes; loose
+ *  enough to absorb the SDK's call rate without rate-limiting TronGrid. */
+const SUN_PER_ENERGY_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /** TRON base58 (T + 33 chars). */
 const TRON_BASE58 = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
@@ -36,6 +42,71 @@ function assertTronAddress(address: string, kind: string): void {
   if (!TRON_BASE58.test(address)) {
     throw new Error(`Invalid TRON ${kind} address: "${address}"`);
   }
+}
+
+interface SunPerEnergyCacheEntry {
+  value: number;
+  fetchedAt: number;
+}
+let sunPerEnergyCache: SunPerEnergyCacheEntry | null = null;
+let sunPerEnergyInflight: Promise<number> | null = null;
+
+/**
+ * For tests — drop the cached sun-per-energy value so the next call goes back
+ * over the wire. Production callers don't need this.
+ */
+export function clearSunPerEnergyCache(): void {
+  sunPerEnergyCache = null;
+  sunPerEnergyInflight = null;
+}
+
+/**
+ * Lazy-fetch the latest sun-per-energy from TronGrid's `/wallet/getenergyprices`
+ * endpoint. Cached per-process for {@link SUN_PER_ENERGY_CACHE_TTL_MS}. Falls
+ * back to {@link DEFAULT_SUN_PER_ENERGY} on any failure (network, parse, empty
+ * response) so a TronGrid outage cannot stall the pay-in flow.
+ *
+ * The endpoint returns a string of historical prices, e.g.
+ *   "0:100,1542607200000:10,1606537500000:40,…,1697461200000:280"
+ * We take the rightmost entry, which is the current rate.
+ *
+ * Test hook: pass `fetchOverride` to short-circuit the network call.
+ */
+export async function fetchCurrentSunPerEnergy(
+  fetchOverride?: typeof fetch,
+): Promise<number> {
+  const now = Date.now();
+  if (sunPerEnergyCache && now - sunPerEnergyCache.fetchedAt < SUN_PER_ENERGY_CACHE_TTL_MS) {
+    return sunPerEnergyCache.value;
+  }
+  if (sunPerEnergyInflight) return sunPerEnergyInflight;
+
+  const fetcher = fetchOverride ?? (typeof fetch === 'function' ? fetch : null);
+  if (!fetcher) {
+    return DEFAULT_SUN_PER_ENERGY;
+  }
+
+  sunPerEnergyInflight = (async () => {
+    try {
+      const res = await fetcher(TRONGRID_ENERGY_PRICES_URL, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) return DEFAULT_SUN_PER_ENERGY;
+      const body = (await res.json()) as { prices?: string };
+      const raw = body.prices ?? '';
+      const last = raw.split(',').pop()?.split(':').pop();
+      const parsed = last ? Number.parseInt(last, 10) : NaN;
+      const value = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SUN_PER_ENERGY;
+      sunPerEnergyCache = { value, fetchedAt: Date.now() };
+      return value;
+    } catch {
+      return DEFAULT_SUN_PER_ENERGY;
+    } finally {
+      sunPerEnergyInflight = null;
+    }
+  })();
+  return sunPerEnergyInflight;
 }
 
 export interface EstimateTronGasInput {
@@ -54,6 +125,8 @@ export interface EstimateTronGasInput {
   sunPerEnergy?: number;
   /** Allow callers (tests) to inject a TronWeb instance. */
   tronWebOverride?: TronWebLike;
+  /** Allow callers (tests) to inject a fetcher when sunPerEnergy is dynamically refreshed. */
+  fetchOverride?: typeof fetch;
 }
 
 /**
@@ -65,7 +138,10 @@ export async function estimateTronGas(
   fee: FeeOracleOptions = {},
 ): Promise<GasEstimate> {
   assertTronAddress(input.contractAddress, 'merchant contract');
-  const sunPerEnergy = input.sunPerEnergy ?? DEFAULT_SUN_PER_ENERGY;
+  // Premortem F6: default to a live fetch instead of the hardcoded 280 so a
+  // Witness fee bump is reflected within the cache TTL. The literal default
+  // remains available as the fallback when the network fetch fails.
+  const sunPerEnergy = input.sunPerEnergy ?? (await fetchCurrentSunPerEnergy(input.fetchOverride));
 
   const tw = input.tronWebOverride ?? getTronWeb();
   if (!tw) {

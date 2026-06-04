@@ -7,6 +7,7 @@ import {
   buildTelemetryEvent,
   hashWalletAddress,
   safeEmit,
+  todayUtc,
   type TelemetryCallback,
   type TelemetryPhase,
 } from '../core/telemetry';
@@ -15,6 +16,8 @@ interface SolanaStartPaymentOpts {
   onTelemetry?: TelemetryCallback;
   walletId?: string;
   contractVersion?: string;
+  /** Storefront identifier — folded into the wallet-digest salt (premortem F8). */
+  storefrontId?: string;
 }
 
 interface UseSolanaPaymentReturn {
@@ -105,7 +108,7 @@ export function useSolanaPayment(): UseSolanaPaymentReturn {
       } catch (err) {
         if (opts.onTelemetry) {
           const errMsg = err instanceof Error ? err.message : String(err);
-          const digest = await hashWalletAddress(wallet.publicKey?.toBase58());
+          const digest = await hashWalletAddress(wallet.publicKey?.toBase58(), opts.storefrontId, todayUtc());
           const errKind = err instanceof PaymentPipelineError ? err.kind : classifyError(err);
           safeEmit(opts.onTelemetry, buildTelemetryEvent({
             chain: 'solana',
