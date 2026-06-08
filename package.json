@@ -84,8 +84,8 @@
     "wagmi": { "optional": true }
   },
   "dependencies": {
-    "@noble/curves": "1.9.1",
-    "@noble/hashes": "1.8.0",
+    "@noble/curves": "2.2.0",
+    "@noble/hashes": "2.2.0",
     "i18next": "26.3.1",
     "react-i18next": "17.0.8",
     "zod": "4.4.3"
