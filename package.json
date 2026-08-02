@@ -127,7 +127,7 @@
     "wagmi": "^3.6.16"
   },
   "overrides": {
-    "axios": "^1.17.0",
+    "axios": "^1.19.0",
     "hono": "^4.12.23",
     "fast-uri": "^3.1.2",
     "rpc-websockets": {
