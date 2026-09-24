@@ -47,7 +47,7 @@ Implemented in [src/core/telemetry.ts](../../src/core/telemetry.ts):
   is emitted.
 - **Schema carries no PII / financial detail by construction.** A `TelemetryEvent`
   has `chain`, `phase`, a stable `errorCode`, optional `walletId` (provider name
-  like `"phantom"`, never the address), optional `contractVersion`, a timestamp,
+  like `"metamask"` or `"tronlink"`, never the address), optional `contractVersion`, a timestamp,
   an **opaque `walletDigest`**, and an optional redacted `message`. There is
   deliberately **no field** for the raw address, payment amount, token symbol, or
   signed payload.
