@@ -13,10 +13,10 @@ import { getTokenBalance } from '../core/contract';
 import { estimateEvmGas, type GasEstimate } from '../evm/estimateGas';
 import { defaultConfirmationPolicy } from '../core/ConfirmationPolicy';
 
-// Wagmi is configured for these EVM chains in Web3SettleProvider. Solana / Tron flow through
-// dedicated sub-entrypoints (`@web3settle/merchant-sdk/solana`, `/tron`) — the main modal is
+// Wagmi is configured for these EVM chains in Web3SettleProvider. TRON flows through its
+// dedicated sub-entrypoint (`@web3settle/merchant-sdk/tron`) — the main modal is
 // EVM-only on purpose, so the storefront's non-EVM chains are filtered from the picker.
-const SUPPORTED_EVM_CHAIN_IDS = new Set([1, 137, 8453]);
+const SUPPORTED_EVM_CHAIN_IDS = new Set([1, 8453]);
 
 interface TokenOption {
   /** Selection sentinel: token address for ERC20s, the literal "native" for the gas token. */
@@ -943,13 +943,9 @@ function ProcessingState({
     typeof chainId === 'number' ? policy.requiredConfirmations(chainId) : null;
   const etaSec =
     typeof chainId === 'number' ? policy.estimatedSecondsToFinality(chainId) : 0;
-  const family = typeof chainId === 'number' ? policy.family(chainId) : null;
-  const isSolana = family === 'solana';
   const hint =
     required && etaSec > 0
-      ? isSolana
-        ? `Awaiting commitment (~${Math.round(etaSec)} s)`
-        : `Waiting for ${required} confirmations (~${Math.round(etaSec)} s)`
+      ? `Waiting for ${required} confirmations (~${Math.round(etaSec)} s)`
       : 'This usually takes 10–60 seconds.';
   return (
     <div role="status" aria-live="polite" className="w3s-flex w3s-flex-col w3s-items-center w3s-gap-4 w3s-py-8">
@@ -1076,7 +1072,7 @@ function NoChainsState() {
         <h3 className="w3s-text-base w3s-font-semibold w3s-text-white">No payment options yet</h3>
         <p className="w3s-mt-1 w3s-text-xs w3s-text-slate-400">
           The merchant hasn&apos;t bound any supported networks to this storefront. Once they deploy
-          a contract on Ethereum, Polygon, or Base and enable a token, this modal will let you pay.
+          a contract on Ethereum or Base and enable a token, this modal will let you pay.
         </p>
       </div>
     </div>

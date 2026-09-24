@@ -3,7 +3,7 @@
  *
  * Why native HTMLElement and not Lit:
  *   - Lit pulls ~10 kB of runtime; we already kept the bundle slim by
- *     hand-rolling Solana instructions, so adding a dependency for one button
+ *     hand-rolling calldata, so adding a dependency for one button
  *     doesn't fit the brief.
  *   - The button is a thin shell — it only needs `connectedCallback`,
  *     `disconnectedCallback`, attribute reflection and shadow DOM. Native is

@@ -77,7 +77,7 @@ describe('assertDeadlineFresh', () => {
 describe('buildPermitTypedData', () => {
   it('packs the EIP-2612 domain with chainId, name, version, verifyingContract', () => {
     const td = buildPermitTypedData({
-      chainId: 137,
+      chainId: 8453,
       tokenAddress: TOKEN,
       tokenName: 'USD Coin',
       tokenVersion: '2',
@@ -90,7 +90,7 @@ describe('buildPermitTypedData', () => {
     expect(td.domain).toEqual({
       name: 'USD Coin',
       version: '2',
-      chainId: 137,
+      chainId: 8453,
       verifyingContract: TOKEN,
     });
     expect(td.primaryType).toBe('Permit');
@@ -190,9 +190,9 @@ describe('signPermit', () => {
   });
 
   it('refuses to sign when the wallet chainId disagrees with the permit chainId', async () => {
-    // The wallet is on chain 137 but the caller is asking us to sign for chain 1.
+    // The wallet is on chain 8453 (Base) but the caller is asking us to sign for chain 1.
     // The signed message would be replayable on the wallet's actual chain.
-    const wallet = fakeWallet({ chainId: 137 });
+    const wallet = fakeWallet({ chainId: 8453 });
     await expect(signPermit({
       walletClient: wallet,
       chainId: 1,
@@ -203,7 +203,7 @@ describe('signPermit', () => {
       value: 1n,
       nonce: 0n,
       deadline: freshDeadline(),
-    })).rejects.toThrow(/Wallet chainId 137 does not match permit chainId 1/);
+    })).rejects.toThrow(/Wallet chainId 8453 does not match permit chainId 1/);
   });
 
   it('refuses to sign with a MAX_SAFE_INTEGER deadline (no expiry)', async () => {

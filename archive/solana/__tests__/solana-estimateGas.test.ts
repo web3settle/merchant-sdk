@@ -9,7 +9,7 @@ import {
   estimateSolanaGas,
   buildSolanaEstimateInstruction,
   LAMPORTS_PER_SIGNATURE,
-} from '../solana/estimateGas';
+} from '../estimateGas';
 import { NATIVE_TOKEN_SENTINEL } from '../core/types';
 
 // Use a real curve-point program id. SystemProgram (`...11112`) has no viable

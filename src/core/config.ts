@@ -60,6 +60,10 @@ export const ERC20_ABI = [
 ] as const;
 
 // ── Default Chain Configurations ─────────────────────────────────────────────
+//
+// Chain cut 2026-09-24: Polygon (137) dropped permanently (decision D1) and
+// Solana archived (decision D2). Active families: EVM (non-Polygon) + TRON —
+// TRON ships its own config under `src/tron/`.
 
 export const DEFAULT_CHAINS: Record<number, Omit<ChainConfig, 'contractAddress'>> = {
   1: {
@@ -81,25 +85,6 @@ export const DEFAULT_CHAINS: Record<number, Omit<ChainConfig, 'contractAddress'>
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     confirmations: 12,
   },
-  137: {
-    chainId: 137,
-    name: 'Polygon',
-    tokens: [
-      {
-        address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
-        symbol: 'USDC',
-        decimals: 6,
-      },
-      {
-        address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
-        symbol: 'USDT',
-        decimals: 6,
-      },
-    ],
-    explorerUrl: 'https://polygonscan.com',
-    nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
-    confirmations: 30,
-  },
   8453: {
     chainId: 8453,
     name: 'Base',
@@ -120,7 +105,6 @@ export const DEFAULT_CHAINS: Record<number, Omit<ChainConfig, 'contractAddress'>
 
 export const CHAIN_ICONS: Record<number, string> = {
   1: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
-  137: 'https://assets.coingecko.com/coins/images/4713/small/polygon.png',
   8453: 'https://assets.coingecko.com/asset_platforms/images/131/small/base.jpeg',
 };
 
@@ -128,7 +112,6 @@ export const CHAIN_ICONS: Record<number, string> = {
 
 export const COINGECKO_CHAIN_IDS: Record<number, string> = {
   1: 'ethereum',
-  137: 'matic-network',
   8453: 'ethereum', // Base uses ETH as native
 };
 
@@ -178,7 +161,6 @@ export const PAYMENT_CONFIG_MAX_AGE_MS = 5 * 60 * 1000; // 5 min
  */
 export const KNOWN_CONTRACT_ADDRESSES: Record<number, ReadonlySet<string>> = {
   1: new Set<string>(),
-  137: new Set<string>(),
   8453: new Set<string>(),
 };
 
@@ -207,7 +189,6 @@ export const KNOWN_PERMIT_TOKENS: ReadonlySet<string> = new Set<string>([
   // Computed from:
   //   USD Coin | 2 | 1 | 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48 (USDC mainnet)
   //   Dai Stablecoin | 1 | 1 | 0x6b175474e89094c44da98b954eedeac495271d0f (DAI mainnet)
-  //   USD Coin | 2 | 137 | 0x3c499c542cef5e3811e1192ce70d8cc03d5c3359 (USDC Polygon native)
   //   USD Coin | 2 | 8453 | 0x833589fcd6edb6e08f4c7c32d4f71b54bda02913 (USDC Base)
   // The constants below are pre-computed via permitDomainKey; recompute and
   // commit fresh values when adding tokens.

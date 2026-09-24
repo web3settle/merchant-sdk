@@ -41,7 +41,6 @@ export type {
   ConfirmationPolicy,
   ConfirmationProgress,
   ChainFamily,
-  SolanaCommitmentLevel,
 } from '../core/ConfirmationPolicy';
 
 // Telemetry helpers (re-export from core for convenience)

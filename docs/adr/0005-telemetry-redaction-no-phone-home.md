@@ -2,9 +2,14 @@
 
 **Status:** Accepted
 
+**Amended 2026-09-24 (chain cut).** The decision stands unchanged. Solana was
+archived (decision D2) and Polygon dropped (decision D1), so `TelemetryChain` is
+now `'evm' | 'tron'`. The base58 redaction rule below still applies — TRON
+addresses are base58 too.
+
 ## Context
 
-When a customer's pay-in fails on EVM / Solana / TRON, the merchant otherwise has
+When a customer's pay-in fails on EVM / TRON, the merchant otherwise has
 no visibility into *why* (user rejected? wrong network? gas? RPC down?). The SDK
 needs a failure-breadcrumb mechanism — but it runs **in the end customer's
 browser**, on the customer's device, holding their wallet address and live error
@@ -42,7 +47,7 @@ Implemented in [src/core/telemetry.ts](../../src/core/telemetry.ts):
   is emitted.
 - **Schema carries no PII / financial detail by construction.** A `TelemetryEvent`
   has `chain`, `phase`, a stable `errorCode`, optional `walletId` (provider name
-  like `"phantom"`, never the address), optional `contractVersion`, a timestamp,
+  like `"metamask"` or `"tronlink"`, never the address), optional `contractVersion`, a timestamp,
   an **opaque `walletDigest`**, and an optional redacted `message`. There is
   deliberately **no field** for the raw address, payment amount, token symbol, or
   signed payload.
@@ -55,7 +60,7 @@ Implemented in [src/core/telemetry.ts](../../src/core/telemetry.ts):
   user *within* one day.
 - **Defensive message redaction.** `redactErrorMessage()` strips, before the
   message ever leaves the SDK: 0x addresses & tx hashes (incl. a bare 40-hex
-  token), UUIDs, Solana/TRON base58 tokens, POSIX/Windows/`file://` absolute
+  token), UUIDs, TRON base58 tokens, POSIX/Windows/`file://` absolute
   paths, and long (≥64-char) hex blobs (keys/raw signatures); then truncates to
   **240 chars**. The redaction list is documented in-code as "what we've actually
   seen leak through wallet/RPC errors."

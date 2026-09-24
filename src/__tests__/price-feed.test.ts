@@ -31,17 +31,17 @@ describe('price-feed', () => {
       expect(price).toBe(3200);
     });
 
-    it('fetches POL price for Polygon', async () => {
+    it('fetches ETH price for Base (Base uses ETH as native)', async () => {
       vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(JSON.stringify({ 'matic-network': { usd: 0.45 } }), {
+        new Response(JSON.stringify({ ethereum: { usd: 3200 } }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         }),
       );
 
-      const price = await getNativeTokenPrice(137);
+      const price = await getNativeTokenPrice(8453);
 
-      expect(price).toBe(0.45);
+      expect(price).toBe(3200);
     });
 
     it('returns cached price on second call within TTL', async () => {

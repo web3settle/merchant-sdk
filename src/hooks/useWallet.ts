@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useAccount, useConnect, useDisconnect, useBalance } from 'wagmi';
+import { formatUnits } from 'viem';
 
 interface UseWalletReturn {
   /** Connected wallet address, or undefined if not connected. */
@@ -43,7 +44,10 @@ export function useWallet(): UseWalletReturn {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   }, [address]);
 
-  const balance = balanceData ? balanceData.formatted : null;
+  // wagmi v3's `useBalance` dropped the pre-formatted `formatted` field; the
+  // hook now returns raw `value` + `decimals`. Format here so the SDK's
+  // public `balance: string | null` contract is unchanged for consumers.
+  const balance = balanceData ? formatUnits(balanceData.value, balanceData.decimals) : null;
   const balanceSymbol = balanceData ? balanceData.symbol : null;
 
   return {

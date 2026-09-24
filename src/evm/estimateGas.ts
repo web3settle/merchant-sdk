@@ -28,11 +28,11 @@ import { NATIVE_TOKEN_SENTINEL, type TokenSelection } from '../core/types';
 
 /**
  * Unified shape returned by all three chain estimators. Native unit is
- * chain-specific (wei for EVM, lamports for Solana, sun for TRON), USD is
+ * chain-specific (wei for EVM, sun for TRON), USD is
  * common.
  */
 export interface GasEstimate {
-  /** Total native fee, smallest unit (wei / lamports / sun). */
+  /** Total native fee, smallest unit (wei / sun). */
   native: bigint | number;
   /**
    * Approximate USD equivalent. `null` when the caller did not supply a
@@ -40,7 +40,7 @@ export interface GasEstimate {
    */
   usd: number | null;
   /** Per-chain breakdown for debugging / advanced UIs. */
-  breakdown: EvmGasBreakdown | SolanaGasBreakdown | TronGasBreakdown;
+  breakdown: EvmGasBreakdown | TronGasBreakdown;
 }
 
 export interface EvmGasBreakdown {
@@ -54,16 +54,6 @@ export interface EvmGasBreakdown {
 }
 
 // Re-exported by the chain-specific files so tests can typecheck.
-export interface SolanaGasBreakdown {
-  family: 'solana';
-  /** Compute units required by the simulated tx. */
-  computeUnits: number;
-  /** Median priority fee in micro-lamports / CU at the moment of estimate. */
-  microLamportsPerCu: number;
-  /** Static SystemProgram tx fee (5000 lamports per signature). */
-  baseLamports: number;
-}
-
 export interface TronGasBreakdown {
   family: 'tron';
   /** Energy units the call would consume. */

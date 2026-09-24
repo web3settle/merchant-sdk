@@ -51,7 +51,7 @@ describe('redactErrorMessage', () => {
     expect(out).toBe('failure on 0x<redacted> (session <uuid>)');
   });
 
-  it('redacts a Solana base58 pubkey when whitespace-bounded', () => {
+  it('redacts a TRON-style base58 pubkey when whitespace-bounded', () => {
     const msg = 'rejected by 4Nd1mYbHGd5gKPVtSuPxCMC8gXSyfuwBkXk1JLPv2VEC';
     const out = redactErrorMessage(msg);
     expect(out).toMatch(/<addr>/);
@@ -187,7 +187,7 @@ describe('safeEmit', () => {
   });
 
   it('is a no-op when the callback is undefined', () => {
-    const ev = buildTelemetryEvent({ chain: 'solana', phase: 'connect', errorCode: 'unknown' });
+    const ev = buildTelemetryEvent({ chain: 'tron', phase: 'connect', errorCode: 'unknown' });
     expect(() => safeEmit(undefined, ev)).not.toThrow();
   });
 });

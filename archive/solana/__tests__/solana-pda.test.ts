@@ -11,13 +11,13 @@ import {
   deriveSolVaultPda,
   deriveTokenTotalsPda,
   hexToBytes32,
-} from '../solana/pda';
+} from '../pda';
 import {
   buildPayInNativeInstruction,
   buildPayInTokenInstruction,
   TOKEN_PROGRAM_ID,
   ASSOCIATED_TOKEN_PROGRAM_ID,
-} from '../solana/instructions';
+} from '../instructions';
 
 const TEST_PROGRAM = new PublicKey('Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS');
 // Non-trivial merchant id. A zeroed id would collide with an on-curve point
