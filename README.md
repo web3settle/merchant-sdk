@@ -3,6 +3,11 @@
 React component library for accepting crypto payments via Web3Settle. Drop in a provider and a pay button to take on-chain payments on **Ethereum, Base, and TRON** directly from your users' wallets — no custody, no card data, no server-side signing.
 
 > **Chain cut (2026-09-24).** Polygon was dropped permanently (decision D1) and the `./solana` subpath was archived (decision D2). `@web3settle/merchant-sdk/solana` no longer exists, and chainId `137` is gone from the default chain catalog. See `archive/solana/README.md` and the CHANGELOG's *Unreleased* entry for the full list of removed exports.
+>
+> **Which chains are supported is stated in exactly one place:** the platform's
+> `docs/CHAIN_MATRIX.md` (workspace root of the `web3settle-monorepo` repo), mirrored
+> contractually by `docs/SOFTWARE_PRODUCT_DESCRIPTION.md` §3.1. If this README and that
+> table ever disagree, the table is right.
 
 **Distribution:** each chain family lives behind a separate subpath export so the bundler only pulls in what you actually use.
 
