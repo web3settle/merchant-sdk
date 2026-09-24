@@ -11,7 +11,7 @@ const CONTRACT_ADDR = '0x1234567890abcdef1234567890abcdef12345678';
 
 function bytesToHex(b: Uint8Array): string {
   let s = '';
-  for (let i = 0; i < b.length; i += 1) s += b[i].toString(16).padStart(2, '0');
+  for (const byte of b) s += byte.toString(16).padStart(2, '0');
   return s;
 }
 

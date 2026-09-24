@@ -52,8 +52,8 @@ export function permitDomainKey(
   const input = `${name}|${version}|${chainId}|${verifyingContract.toLowerCase()}`;
   const bytes = sha256(new TextEncoder().encode(input));
   let hex = '';
-  for (let i = 0; i < bytes.length; i += 1) {
-    hex += (bytes[i] ?? 0).toString(16).padStart(2, '0');
+  for (const byte of bytes) {
+    hex += byte.toString(16).padStart(2, '0');
   }
   return hex;
 }

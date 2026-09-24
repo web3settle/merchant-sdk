@@ -42,14 +42,14 @@ describe('isPermitDomainKnown', () => {
 describe('signPermit refuses unknown tokens (premortem F3)', () => {
   it('throws UnknownPermitTokenError before contacting the wallet', async () => {
     const fakeWalletClient = {
-      getAddresses: async () => ['0x1111111111111111111111111111111111111111'],
-      signTypedData: async () => {
-        throw new Error('Wallet should never have been called');
-      },
+      getAddresses: () => Promise.resolve(['0x1111111111111111111111111111111111111111']),
+      signTypedData: () => Promise.reject(new Error('Wallet should never have been called')),
     };
     await expect(
       signPermit({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately
+        // partial wallet-client double; the point of this test is that signPermit
+        // rejects BEFORE touching the wallet at all.
         walletClient: fakeWalletClient as any,
         chainId: 1,
         tokenAddress: '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
