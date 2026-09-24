@@ -1,12 +1,12 @@
 import { z } from 'zod';
 import type { TelemetryCallback } from './telemetry';
 
-// Accept EVM hex (0x + 40 hex), Solana base58 (32–44 chars), and TRON base58 (T + 33 chars).
-// Per-pipeline validators in src/solana/ and src/tron/ tighten this at construction time.
+// Accept EVM hex (0x + 40 hex) and TRON base58 (T + 33 chars).
+// Per-pipeline validators in src/tron/ tighten this at construction time.
 const CROSS_CHAIN_ADDRESS_REGEX = /^(0x[a-fA-F0-9]{40}|T[1-9A-HJ-NP-Za-km-z]{33}|[1-9A-HJ-NP-Za-km-z]{32,44})$/;
 
 export const TokenConfigSchema = z.object({
-  // Allow EVM, Solana mint (base58), or TRON T-address. Per-pipeline modules
+  // Allow EVM or TRON T-address. Per-pipeline modules
   // re-validate tightly at call time.
   address: z.string().regex(CROSS_CHAIN_ADDRESS_REGEX, 'Invalid token address'),
   symbol: z.string().min(1).max(10),
@@ -123,7 +123,7 @@ export interface Web3SettleConfig {
   onError?: (error: Error) => void;
   /**
    * Optional opt-in failure breadcrumb. When the SDK catches a payment
-   * failure on EVM, Solana, or TRON, it builds a sanitized
+   * failure on EVM or TRON, it builds a sanitized
    * {@link TelemetryEvent} (no addresses except hashed; no amounts) and
    * passes it to this callback. Throwing is caught and ignored — telemetry
    * never blocks the user-facing flow. See `core/telemetry.ts` for the
@@ -199,7 +199,7 @@ export interface TransactionStatusProps {
   error?: string;
   /**
    * Optional Segment 2.2 inputs — when supplied, the component renders an
-   * "X of N confirmations" label (or commitment-level state for Solana)
+   * "X of N confirmations" label
    * during {@link PaymentStatus.Confirming}. Both must be set for the label
    * to render — supplying only one is a no-op.
    *
@@ -208,8 +208,7 @@ export interface TransactionStatusProps {
    * `publicClient` / `connection`) drives the polling loop.
    */
   chainId?: number;
-  /** Best-effort current confirmation depth (for EVM/TRON) or commitment
-   *  rank (0 pending, 1 confirmed, 2 finalized) for Solana. */
+  /** Best-effort current confirmation depth. */
   currentConfirmations?: number;
 }
 

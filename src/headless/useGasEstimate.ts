@@ -1,8 +1,8 @@
 /**
  * Headless gas-estimate controller (item 14.5).
  *
- * Wraps any of the three chain estimators (`evm/estimateGas`,
- * `solana/estimateGas`, `tron/estimateGas`) under a single subscription
+ * Wraps either chain estimator (`evm/estimateGas`, `tron/estimateGas`) under a
+ * single subscription
  * surface so non-React UIs can drive "≈ $X fee" badges.
  *
  * The estimator is injected as a thunk so the controller stays chain-agnostic

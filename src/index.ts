@@ -20,7 +20,6 @@ export {
 export type {
   GasEstimate,
   EvmGasBreakdown,
-  SolanaGasBreakdown,
   TronGasBreakdown,
   FeeOracleOptions,
   EstimateEvmGasInput,
@@ -63,10 +62,10 @@ export type {
 // Cross-chain abstraction over per-chain confirmation/finality. Storefronts
 // should consume `defaultConfirmationPolicy` instead of branching on
 // `chainId` to decide "is this safe yet". See `core/ConfirmationPolicy.ts`.
+// Active families after the 2026-09-24 chain cut: EVM (non-Polygon) + TRON.
 export {
   DefaultConfirmationPolicy,
   defaultConfirmationPolicy,
-  createHighValueConfirmationPolicy,
   DEFAULT_CONFIRMATION_THRESHOLDS,
   CHAIN_FAMILY_REGISTRY,
   DEFAULT_SECONDS_TO_FINALITY,
@@ -75,7 +74,6 @@ export type {
   ConfirmationPolicy,
   ConfirmationProgress,
   ChainFamily,
-  SolanaCommitmentLevel,
 } from './core/ConfirmationPolicy';
 export { evmConfirmationPolicy } from './evm/confirmationPolicy';
 

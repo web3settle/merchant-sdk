@@ -5,6 +5,81 @@ All notable changes to `@web3settle/merchant-sdk` will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Chain cut: drop Polygon, archive Solana (2026-09-24)
+
+Product decisions **D1** (drop Polygon permanently) and **D2** (archive Solana
+out of mainline). Active chain families: **EVM (non-Polygon) + TRON**.
+
+> **Version not bumped on purpose.** This is a breaking API change and needs a
+> `0.6.0` release decision from the founder — bumping here would make CI publish
+> a prerelease carrying breaking changes off `develop`. See the workspace-root
+> `humanpending.md`.
+
+### Removed — BREAKING
+
+- **`@web3settle/merchant-sdk/solana` subpath.** Gone from `exports`, from the
+  Vite entry map, and from the peer/dev dependency sets (`@solana/web3.js`,
+  `@solana/wallet-adapter-base`, `@solana/wallet-adapter-react`). Sources moved
+  to `archive/solana/` — outside `tsconfig` `include`, the Vitest `include`, and
+  the ESLint `files` glob, so nothing typechecks, lints, tests or bundles them.
+- **Solana-shaped holes in the shared surface**, rather than leaving them
+  returning `null` for every chain: `SolanaCommitmentLevel`,
+  `ConfirmationPolicy.commitmentLevel()`, `createHighValueConfirmationPolicy()`,
+  and `SolanaGasBreakdown`.
+- **`'solana'` from the union types** `ChainFamily`, `PaymentFamily` and
+  `TelemetryChain`.
+- **The `solana.*` i18n namespace** from `en` and `pt-BR`.
+- **Polygon (chainId 137)** from `DEFAULT_CHAINS`, `CHAIN_ICONS`,
+  `COINGECKO_CHAIN_IDS`, `KNOWN_CONTRACT_ADDRESSES`,
+  `DEFAULT_CONFIRMATION_THRESHOLDS`, `CHAIN_FAMILY_REGISTRY`,
+  `DEFAULT_SECONDS_TO_FINALITY`, the `price-feed` `matic-network` fallback, the
+  wagmi chain list in `Web3SettleProvider`, and the EVM chain-id allowlists in
+  `TopUpModal` / `evm/confirmationPolicy`.
+
+### Added
+
+- **Drop guards** in `src/__tests__/confirmationPolicy.test.ts`: chainId 137 and
+  the Solana sentinels 900–902 must be absent from every registry, must resolve
+  as *unknown* chains (12 confirmations, 0 s ETA) rather than as their old
+  selves, and no registry entry may claim a family outside `evm | tron`. These
+  fail if a dropped chain is re-added without a founder decision.
+- `archive/solana/README.md` — quarantine banner and re-wiring checklist.
+
+### Fixed — pre-existing, not caused by the cut
+
+These three were blocking `tsc --noEmit`, which is the check that proves the cut
+did not break the type surface. Fixed minimally so the cut is verifiable; each is
+independent of the chain work:
+
+- `tsconfig.json` — dropped the deprecated `baseUrl` (and the `@/*` `paths` alias
+  it enabled, which nothing imported). TypeScript 6 makes `baseUrl` a hard error,
+  so `npm run typecheck` aborted before reaching any source file.
+- `src/hooks/useWallet.ts` — wagmi v3's `useBalance` no longer returns
+  `formatted`; format `value`/`decimals` with viem's `formatUnits` so the SDK's
+  public `balance: string | null` contract is unchanged.
+- `src/css.d.ts` (new) — TypeScript 6 needs a declaration for the side-effect
+  `import './styles.css'` in `src/styles.ts`.
+- `.npmrc` (new) — pins `legacy-peer-deps=true`. `eslint-plugin-jsx-a11y@6.10.2`
+  (its newest) declares `eslint: ^3 … ^9` while this package pins eslint ^10, so
+  a clean `npm ci` fails ERESOLVE. The committed lockfile was already built that
+  way; making it explicit keeps local installs, CI and the lockfile in agreement.
+
+### Still broken — pre-existing, out of scope for this cut
+
+Verified as failing identically on the pre-cut tree:
+
+- `npm run lint` — `eslint-plugin-react` is incompatible with ESLint 10
+  (`contextOrFilename.getFilename is not a function`). Needs eslint pinned to ^9
+  or plugin releases that support 10.
+- `npm run build` (the `vite build` half) — Tailwind v4 moved its PostCSS plugin
+  to `@tailwindcss/postcss`; after that is fixed the build next fails on a
+  missing `esbuild` (the root `overrides.esbuild` pin vs Vite 8 / rolldown).
+- 4 tests in `src/__tests__/permit.test.ts` — `signPermit` gained the
+  `KNOWN_PERMIT_TOKENS` gate (ADR-0004) but those cases still use a token domain
+  that is not allow-listed, and the shipped allowlist holds one placeholder
+  digest. Fixing it means deciding the real allowlist contents, not editing a
+  test. 165 of 169 tests pass.
+
 ## [0.5.0] - 2026-05-09
 
 ### Added

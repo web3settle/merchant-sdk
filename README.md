@@ -1,30 +1,30 @@
 # @web3settle/merchant-sdk
 
-React component library for accepting crypto payments via Web3Settle. Drop in a provider and a pay button to take on-chain payments on **Ethereum, Polygon, Base, Solana, and TRON** directly from your users' wallets — no custody, no card data, no server-side signing.
+React component library for accepting crypto payments via Web3Settle. Drop in a provider and a pay button to take on-chain payments on **Ethereum, Base, and TRON** directly from your users' wallets — no custody, no card data, no server-side signing.
+
+> **Chain cut (2026-09-24).** Polygon was dropped permanently (decision D1) and the `./solana` subpath was archived (decision D2). `@web3settle/merchant-sdk/solana` no longer exists, and chainId `137` is gone from the default chain catalog. See `archive/solana/README.md` and the CHANGELOG's *Unreleased* entry for the full list of removed exports.
 
 **Distribution:** each chain family lives behind a separate subpath export so the bundler only pulls in what you actually use.
 
 | Subpath | What it brings | Peer deps you must install |
 |---|---|---|
-| `@web3settle/merchant-sdk` | EVM (Ethereum / Polygon / Base) provider + button + modal + hooks | `wagmi`, `viem`, `@wagmi/core`, `@tanstack/react-query` |
-| `@web3settle/merchant-sdk/solana` | Solana provider + button + modal + hooks + PDA helpers + raw instruction builders | `@solana/web3.js`, `@solana/wallet-adapter-base`, `@solana/wallet-adapter-react`, plus the wallet-specific adapter packages you want (Phantom, Solflare, …) |
+| `@web3settle/merchant-sdk` | EVM (Ethereum / Base) provider + button + modal + hooks | `wagmi`, `viem`, `@wagmi/core`, `@tanstack/react-query` |
 | `@web3settle/merchant-sdk/tron` | TRON provider + button + modal + hooks (TronLink-backed) | TronLink browser extension at runtime. The `tronweb` package is a peer for TypeScript types only — the SDK uses the extension's injected `window.tronWeb` |
 | `@web3settle/merchant-sdk/headless` | Framework-agnostic controllers (`createPayButtonController`, `createWalletConnectController`, `createGasEstimateController`) — V0.5.0 — for Vue / Svelte / vanilla JS callers | None beyond your chain-stack peers above |
 | `@web3settle/merchant-sdk/wc` | `<web3settle-pay-button>` native HTMLElement built on top of the headless layer — V0.5.0 | None beyond your chain-stack peers above |
 
-EVM-only consumers never pay the bundle cost of the Solana / TRON stacks; Solana-only consumers never pull wagmi. Import only the subpaths you need.
+EVM-only consumers never pay the bundle cost of the TRON stack; TRON-only consumers never pull wagmi. Import only the subpaths you need.
 
 ## Features
 
-- Five chains across three stacks: **Ethereum, Polygon, Base** (wagmi + viem), **Solana** (wallet-adapter + web3.js), **TRON** (TronLink)
-- Unified `PaymentPipeline` interface so all three stacks present the same `quoteAmount → needsApproval → approve → execute → waitForReceipt` surface
+- Three chains across two stacks: **Ethereum, Base** (wagmi + viem) and **TRON** (TronLink)
+- Unified `PaymentPipeline` interface so both stacks present the same `quoteAmount → needsApproval → approve → execute → waitForReceipt` surface
 - Native currency and fungible-token payments on every chain
 - **EVM:** ERC-20 approval flow with exact-amount allowance (never unlimited). **EIP-712 permit** (V0.5.0 / segment 14.6) — when the token implements EIP-2612 the SDK signs the typed-data permit and submits `permit(...)` directly, saving the user one popup and ~$0.50 of gas.
-- **Solana:** no-approval direct transfer; PDA derivation + hand-rolled Anchor instruction builders bundled (no `@coral-xyz/anchor` dependency)
 - **TRON:** TRC-20 approve + pay, `SafeTRC20`-aware for non-return-value tokens like USDT-TRON
-- Built-in wallet connection per chain (injected + WalletConnect on EVM; Phantom / Solflare / Backpack on Solana; TronLink)
+- Built-in wallet connection per chain (injected + WalletConnect on EVM; TronLink on TRON)
 - Real-time transaction status tracking with reorg-aware confirmation counts
-- **Gas estimator** (V0.5.0 / segment 14.1) — `estimateEvmGas`, `estimateSolanaGas`, `estimateTronGas` — single `GasEstimate` shape across all three chains; the modal renders a `≈ $X` network-fee badge
+- **Gas estimator** (V0.5.0 / segment 14.1) — `estimateEvmGas`, `estimateTronGas` — single `GasEstimate` shape across both stacks; the modal renders a `≈ $X` network-fee badge
 - **Telemetry breadcrumbs** (V0.5.0 / segment 14.2) — opt-in `onTelemetry` callback emits a privacy-redacted event per failed pay-in (no plain addresses, no amounts; PII-redacted message ≤240 chars)
 - **Headless layer + Web Components** (V0.5.0 / segment 14.5) — `@web3settle/merchant-sdk/headless` and `@web3settle/merchant-sdk/wc` (`<web3settle-pay-button>` native HTMLElement) for Vue / Svelte / vanilla JS callers
 - CoinGecko price feeds with in-memory caching + stale-while-revalidate fallback
@@ -32,7 +32,7 @@ EVM-only consumers never pay the bundle cost of the Solana / TRON stacks; Solana
 - Zod-validated API responses at every boundary
 - Tree-shakeable ES modules + CommonJS output, one subpath per chain family
 - Full TypeScript type exports
-- **i18n via i18next** — English and Brazilian Portuguese shipped; straightforward extension to any locale; separate `solana.*` and `tron.*` key namespaces
+- **i18n via i18next** — English and Brazilian Portuguese shipped; straightforward extension to any locale; separate `tron.*` key namespace
 - Accessibility: role-dialog modal with focus trap, ESC close, screen-reader labels
 
 ## Install
@@ -118,53 +118,6 @@ export function TopUp() {
 }
 ```
 
-## Solana quick start
-
-Install the Solana peer deps + the wallet adapters you want to offer:
-
-```bash
-npm install @web3settle/merchant-sdk \
-  @solana/web3.js @solana/wallet-adapter-base @solana/wallet-adapter-react \
-  @solana/wallet-adapter-phantom @solana/wallet-adapter-solflare \
-  @tanstack/react-query
-```
-
-Wrap your app with the Solana provider and drop in the Solana button. The `programId` is the deployed `MerchantPayIn` Anchor program ID; `merchantId` is the 32-byte identifier the backend uses to derive the merchant's config PDA (hex string, with or without `0x` prefix).
-
-```tsx
-import { useMemo } from 'react';
-import {
-  SolanaWeb3SettleProvider,
-  SolanaPayButton,
-} from '@web3settle/merchant-sdk/solana';
-import '@web3settle/merchant-sdk/styles.css';
-import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
-import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
-
-export function App() {
-  const wallets = useMemo(
-    () => [new PhantomWalletAdapter(), new SolflareWalletAdapter()],
-    [],
-  );
-
-  return (
-    <SolanaWeb3SettleProvider
-      config={{ apiBaseUrl: 'https://api.yoursite.com', storefrontId: 'uuid' }}
-      solana={{
-        programId: 'Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS',
-        merchantId: '0x' + '01'.repeat(32),
-      }}
-      wallets={wallets}
-      cluster="mainnet-beta"
-    >
-      <SolanaPayButton amount={29.99} label="Pay with SOL or SPL" />
-    </SolanaWeb3SettleProvider>
-  );
-}
-```
-
-Advanced use: `useSolanaPipeline()` returns a `SolanaPaymentPipeline` bound to the current wallet — call `quoteAmount`, `execute`, `waitForReceipt` directly. `buildPayInNativeInstruction` and `buildPayInTokenInstruction` are exposed if you want to compose pay-ins into your own Solana transactions.
-
 ## TRON quick start
 
 The TRON subpath uses the user's [TronLink extension](https://www.tronlink.org/) at runtime. No build-time TronWeb dependency is required.
@@ -193,21 +146,13 @@ export function App() {
 
 ## Supporting multiple chains in the same app
 
-EVM, Solana, and TRON each need their own provider — they use different wallet stacks and can't share a single `Web3SettleProvider`. Nest them, or pick at render time:
+EVM and TRON each need their own provider — they use different wallet stacks and can't share a single `Web3SettleProvider`. Nest them, or pick at render time:
 
 ```tsx
 import { Web3SettleProvider, Web3SettlePayButton } from '@web3settle/merchant-sdk';
-import { SolanaWeb3SettleProvider, SolanaPayButton } from '@web3settle/merchant-sdk/solana';
 import { TronWeb3SettleProvider, TronPayButton } from '@web3settle/merchant-sdk/tron';
 
 export function MultiChainCheckout({ chain, amount }) {
-  if (chain === 'solana') {
-    return (
-      <SolanaWeb3SettleProvider config={…} solana={…} wallets={…}>
-        <SolanaPayButton amount={amount} />
-      </SolanaWeb3SettleProvider>
-    );
-  }
   if (chain === 'tron') {
     return (
       <TronWeb3SettleProvider config={…}>
@@ -223,7 +168,7 @@ export function MultiChainCheckout({ chain, amount }) {
 }
 ```
 
-All three pipelines implement the same `PaymentPipeline` interface exported from the root:
+Both pipelines implement the same `PaymentPipeline` interface exported from the root:
 
 ```ts
 import type { PaymentPipeline, PaymentReceipt, PaymentErrorKind } from '@web3settle/merchant-sdk';
@@ -560,12 +505,12 @@ Visual RTL support (`dir="rtl"`) is **not** applied automatically — your host 
 | Chain | Stack | Native | Default whitelist | SDK subpath |
 |---|---|---|---|---|
 | Ethereum | EVM / wagmi | ETH | USDC, USDT | root |
-| Polygon | EVM / wagmi | POL | USDC, USDT | root |
 | Base | EVM / wagmi | ETH | USDC | root |
-| Solana mainnet-beta | wallet-adapter + web3.js | SOL | SPL tokens (any the merchant whitelists) | `/solana` |
 | TRON mainnet | TronLink | TRX | TRC-20 (incl. USDT-TRON via `SafeTRC20`) | `/tron` |
 
-All five use the same `MerchantPayIn` V3.0 contract model — immutable commission set at initialize, token whitelist managed by the admin role, no renegotiation path.
+All three use the same `MerchantPayIn` V3.0 contract model — immutable commission set at initialize, token whitelist managed by the admin role, no renegotiation path.
+
+**Removed 2026-09-24 (chain cut):** Polygon (decision D1) and Solana (decision D2). The product's GTM target is four mainnets; the fourth is an open founder decision (**D4a**) tracked in the workspace-root `humanpending.md`. Adding a fourth *EVM* chain here is a config change only — one entry in `DEFAULT_CHAINS`, `CHAIN_ICONS`, `COINGECKO_CHAIN_IDS`, `KNOWN_CONTRACT_ADDRESSES`, `DEFAULT_CONFIRMATION_THRESHOLDS`, `CHAIN_FAMILY_REGISTRY`, `DEFAULT_SECONDS_TO_FINALITY`, plus the wagmi chain list in `Web3SettleProvider`.
 
 ## Security notes
 

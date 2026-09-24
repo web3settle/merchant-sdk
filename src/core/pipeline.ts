@@ -1,21 +1,20 @@
 import type { ChainConfig, TokenSelection } from './types';
 
 /**
- * Common abstraction over the EVM / Solana / TRON payment pipelines.
+ * Common abstraction over the EVM / TRON payment pipelines.
  *
- * Each chain stack (wagmi+viem, @solana/web3.js, tronweb) has a different call
+ * Each chain stack (wagmi+viem, tronweb) has a different call
  * convention. This interface hides the mechanics so merchant UIs can work
  * against a single API regardless of the underlying chain.
  *
  * Each pipeline decides:
  *   - whether an approval step is required (EVM + TRON yes for non-native
- *     tokens; Solana never — the user signs the transfer instruction directly)
+ *     tokens)
  *   - how to encode `value` into the chain's native smallest unit
- *   - what shape of tx hash it returns (hex for EVM, base58 for Solana + TRON)
+ *   - what shape of tx hash it returns (hex for EVM, base58 for TRON)
  *
  * Implementations live in:
  *   - `src/hooks/usePayment.ts`      — EVM (wagmi-backed, already shipped)
- *   - `src/solana/pipeline.ts`       — Solana
  *   - `src/tron/pipeline.ts`         — TRON
  */
 export interface PaymentPipeline {
@@ -23,16 +22,15 @@ export interface PaymentPipeline {
   readonly family: PaymentFamily;
 
   /**
-   * Convert a USD amount into the chain-native smallest unit (wei, lamports,
-   * sun, SPL raw), using the merchant-platform price feeds.
+   * Convert a USD amount into the chain-native smallest unit (wei, sun, or the
+   * token's raw units), using the merchant-platform price feeds.
    */
   quoteAmount(usdAmount: number, chain: ChainConfig, token: TokenSelection): Promise<bigint>;
 
   /**
    * Does this pay-in need an approval / allowance step before the transfer?
    * EVM + TRON return true for non-native tokens when allowance < amount.
-   * Solana always returns false — the user signs the transfer inline.
-   */
+     */
   needsApproval(
     chain: ChainConfig,
     token: TokenSelection,
@@ -50,7 +48,7 @@ export interface PaymentPipeline {
 
   /**
    * Wait until the tx is confirmed at the chain's required depth.
-   * EVM uses block confirmations; Solana uses commitment levels; TRON uses
+   * EVM uses block confirmations; TRON uses
    * `getConfirmedTransaction`.
    */
   waitForReceipt(
@@ -59,11 +57,11 @@ export interface PaymentPipeline {
   ): Promise<PaymentReceipt>;
 }
 
-export type PaymentFamily = 'evm' | 'solana' | 'tron';
+export type PaymentFamily = 'evm' | 'tron';
 
 export interface PaymentReceipt {
   success: boolean;
-  /** Block number (EVM/TRON) or slot (Solana). `null` when unavailable. */
+  /** Block number. `null` when unavailable. */
   blockNumber: bigint | number | null;
   /** Raw receipt from the underlying chain client — for logging / debugging. */
   raw: unknown;

@@ -9,7 +9,6 @@ const priceCache = new Map<string, PriceEntry>();
 
 const FALLBACK_PRICES: Record<string, number> = {
   ethereum: 3500,
-  'matic-network': 0.5,
 };
 
 const STABLECOIN_SYMBOLS = new Set(['USDC', 'USDT', 'DAI', 'BUSD']);

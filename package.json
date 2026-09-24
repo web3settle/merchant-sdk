@@ -1,7 +1,7 @@
 {
   "name": "@web3settle/merchant-sdk",
   "version": "0.5.0",
-  "description": "React SDK for accepting crypto payments via Web3Settle (EVM + Solana + TRON)",
+  "description": "React SDK for accepting crypto payments via Web3Settle (EVM + TRON)",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -18,11 +18,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
-    },
-    "./solana": {
-      "types": "./dist/solana.d.ts",
-      "import": "./dist/solana.js",
-      "require": "./dist/solana.cjs"
     },
     "./tron": {
       "types": "./dist/tron.d.ts",
@@ -63,9 +58,6 @@
     "prepublishOnly": "npm ci --ignore-scripts && npm run typecheck && npm run lint && npm run test && npm run build"
   },
   "peerDependencies": {
-    "@solana/wallet-adapter-base": "^0.9.0",
-    "@solana/wallet-adapter-react": "^0.15.0",
-    "@solana/web3.js": "^1.98.0",
     "@tanstack/react-query": "^5.101.0",
     "@wagmi/core": "^3.5.0",
     "react": "^18.0.0 || ^19.0.0",
@@ -75,13 +67,18 @@
     "wagmi": "^3.6.16"
   },
   "peerDependenciesMeta": {
-    "@solana/wallet-adapter-base": { "optional": true },
-    "@solana/wallet-adapter-react": { "optional": true },
-    "@solana/web3.js": { "optional": true },
-    "@wagmi/core": { "optional": true },
-    "tronweb": { "optional": true },
-    "viem": { "optional": true },
-    "wagmi": { "optional": true }
+    "@wagmi/core": {
+      "optional": true
+    },
+    "tronweb": {
+      "optional": true
+    },
+    "viem": {
+      "optional": true
+    },
+    "wagmi": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@noble/curves": "1.9.1",
@@ -92,9 +89,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@solana/wallet-adapter-base": "^0.9.27",
-    "@solana/wallet-adapter-react": "^0.15.39",
-    "@solana/web3.js": "^1.98.4",
     "@tanstack/react-query": "^5.101.0",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.1.0",
@@ -159,9 +153,7 @@
     "sdk",
     "blockchain",
     "ethereum",
-    "polygon",
     "base",
-    "solana",
     "tron",
     "trx",
     "wagmi",

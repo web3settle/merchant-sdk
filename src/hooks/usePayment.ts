@@ -67,7 +67,7 @@ interface StartPaymentOptions {
   permitDeadlineSeconds?: number;
   /**
    * Confirmation policy (Segment 2.2). When supplied, the hook delegates depth
-   * resolution (and Solana commitment selection) to the policy instead of
+   * resolution to the policy instead of
    * branching on `chain.chainId`. Defaults to {@link defaultConfirmationPolicy}.
    * `chain.confirmations` continues to take precedence when set — the policy
    * only fills in the gap when the per-chain override is absent.
