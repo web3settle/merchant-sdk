@@ -226,7 +226,7 @@ export class Web3SettleApiClient {
         typeof responseBody === 'object' &&
         responseBody !== null &&
         'message' in responseBody &&
-        typeof (responseBody as { message: unknown }).message === 'string'
+        typeof (responseBody).message === 'string'
           ? (responseBody as { message: string }).message
           : `HTTP ${response.status}`;
       throw new Web3SettleApiError(message, response.status, responseBody);

@@ -64,7 +64,7 @@ describe('estimateTronGas', () => {
         token: NATIVE_TOKEN_SENTINEL,
         amount: 1_000_000n,
         tronWebOverride: tw,
-        fetchOverride: fetchFail as unknown as typeof fetch,
+        fetchOverride: fetchFail,
       },
     );
     clearSunPerEnergyCache();
@@ -173,7 +173,7 @@ describe('fetchCurrentSunPerEnergy', () => {
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ),
     );
-    const value = await fetchCurrentSunPerEnergy(fetchMock as unknown as typeof fetch);
+    const value = await fetchCurrentSunPerEnergy(fetchMock);
     expect(value).toBe(420);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -185,8 +185,8 @@ describe('fetchCurrentSunPerEnergy', () => {
         headers: { 'Content-Type': 'application/json' },
       }),
     );
-    const a = await fetchCurrentSunPerEnergy(fetchMock as unknown as typeof fetch);
-    const b = await fetchCurrentSunPerEnergy(fetchMock as unknown as typeof fetch);
+    const a = await fetchCurrentSunPerEnergy(fetchMock);
+    const b = await fetchCurrentSunPerEnergy(fetchMock);
     expect(a).toBe(330);
     expect(b).toBe(330);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -194,7 +194,7 @@ describe('fetchCurrentSunPerEnergy', () => {
 
   it('falls back to DEFAULT_SUN_PER_ENERGY when TronGrid fails', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('rpc down'));
-    const value = await fetchCurrentSunPerEnergy(fetchMock as unknown as typeof fetch);
+    const value = await fetchCurrentSunPerEnergy(fetchMock);
     expect(value).toBe(DEFAULT_SUN_PER_ENERGY);
   });
 });
