@@ -88,7 +88,8 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
+    "@eslint/js": "^9.39.5",
+    "@tailwindcss/postcss": "^4.3.3",
     "@tanstack/react-query": "^5.101.0",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.1.0",
@@ -101,7 +102,8 @@
     "@vitest/coverage-v8": "^4.1.8",
     "@wagmi/core": "^3.5.0",
     "autoprefixer": "^10.4.20",
-    "eslint": "^10.4.1",
+    "esbuild": "^0.28.1",
+    "eslint": "^9.39.5",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react": "^7.37.2",
     "eslint-plugin-react-hooks": "^7.1.1",
@@ -129,7 +131,7 @@
     },
     "lodash": "^4.18.1",
     "follow-redirects": "^1.16.0",
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.28.1"
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",
