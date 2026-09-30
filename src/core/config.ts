@@ -186,12 +186,16 @@ export const SUPPORTED_ABI_VERSIONS: ReadonlySet<string> = new Set(['V3.1', 'V3.
  * shipped SDK does not leak the readable quadruples.
  */
 export const KNOWN_PERMIT_TOKENS: ReadonlySet<string> = new Set<string>([
-  // Computed from:
-  //   USD Coin | 2 | 1 | 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48 (USDC mainnet)
-  //   Dai Stablecoin | 1 | 1 | 0x6b175474e89094c44da98b954eedeac495271d0f (DAI mainnet)
+  // Each quadruple was read from the token itself (name(), version()) and its DOMAIN_SEPARATOR()
+  // re-derived from it on 2026-09-30 — see docs/PERMIT_ALLOWLIST.md for the procedure. Recompute
+  // with permitDomainKey and commit fresh values when adding tokens; never hand-type a digest.
+  //   USD Coin | 2 | 1 | 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48 (USDC Ethereum)
+  '8c11539dd9e44bc329f7c3c445ffdf8a983a513cd701ddfc9f08f9a19fc3db50',
+  //   Dai Stablecoin | 1 | 1 | 0x6b175474e89094c44da98b954eedeac495271d0f (DAI Ethereum)
+  //   Trusted domain, but DAI's permit is not EIP-2612 (PERMIT_TYPEHASH is
+  //   Permit(holder,spender,nonce,expiry,allowed)); detectPermitSupport reports it unsupported, so
+  //   `permit: 'auto'` uses approve() for DAI until a DAI-style permit path exists.
+  '48082c4ecf947e96cb9bd05b2acf20c937ef33a7fe4e4a6566ce23ffe61628d8',
   //   USD Coin | 2 | 8453 | 0x833589fcd6edb6e08f4c7c32d4f71b54bda02913 (USDC Base)
-  // The constants below are pre-computed via permitDomainKey; recompute and
-  // commit fresh values when adding tokens.
-  'cbef72e4f5b1d0bda5c1d7f6c1d0a4e0b7c4e9d3f2a1c0e9d8b7a6c5d4e3f2a1',
+  'ccfe7e53734e6c21f8f58a52977146e61594bbd93edd580159e86da7a0fce586',
 ]);
-
