@@ -234,63 +234,15 @@ describe('Web3SettleApiClient', () => {
     });
   });
 
-  describe('createTopUpSession', () => {
-    it('creates a session successfully', async () => {
-      const sessionId = '660e8400-e29b-41d4-a716-446655440000';
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(JSON.stringify({ sessionId }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      );
-
-      const result = await client.createTopUpSession('user-1', 25.0, 'idempotency-key-1');
-
-      expect(result.sessionId).toBe(sessionId);
-    });
-
-    it('sends correct POST body', async () => {
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ sessionId: '660e8400-e29b-41d4-a716-446655440000' }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
-      );
-
-      await client.createTopUpSession('user-123', 50.0, 'key-abc');
-
-      const [, options] = fetchSpy.mock.calls[0] as [string, RequestInit];
-      const body = JSON.parse(options.body as string) as {
-        userId: string;
-        amount: number;
-        idempotencyKey: string;
-      };
-      expect(body).toEqual({ userId: 'user-123', amount: 50.0, idempotencyKey: 'key-abc' });
-      expect(options.method).toBe('POST');
-    });
-  });
-
-  describe('getSessionStatus', () => {
-    it('fetches session status successfully', async () => {
-      const sessionId = '660e8400-e29b-41d4-a716-446655440000';
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            id: sessionId,
-            amount: 25.0,
-            status: 'confirmed',
-            txHash: '0xabc123',
-            chain: 'Ethereum',
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
-      );
-
-      const session = await client.getSessionStatus(sessionId);
-
-      expect(session.id).toBe(sessionId);
-      expect(session.status).toBe('confirmed');
-      expect(session.txHash).toBe('0xabc123');
+  describe('no browser-side payment creation', () => {
+    // Contract: creating a payment needs the storefront API key, which must never reach the
+    // browser; the 0.5 session calls targeted /api/storefronts/{id}/sessions, which no gateway
+    // serves (404). The browser client therefore exposes no create/session call at all.
+    it('has no session or create-payment methods', () => {
+      const surface = client as unknown as Record<string, unknown>;
+      expect(surface.createTopUpSession).toBeUndefined();
+      expect(surface.getSessionStatus).toBeUndefined();
+      expect(surface.createPayment).toBeUndefined();
     });
   });
 });

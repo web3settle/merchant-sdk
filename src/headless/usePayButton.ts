@@ -15,6 +15,12 @@ import {
   type PaymentConfig,
 } from '../core/types';
 import { safeEmit, type TelemetryCallback, buildTelemetryEvent, hashWalletAddress } from '../core/telemetry';
+import {
+  resolveAttribution,
+  type PayInMode,
+  type PaymentReference,
+  type ResolvedAttribution,
+} from '../core/payment-reference';
 
 /** A snapshot of the controller's current state. */
 export interface PayButtonState {
@@ -28,6 +34,16 @@ export interface PayButtonState {
   error: string | null;
   /** Last tx hash returned by the chain. `null` until a tx is broadcast. */
   txHash: string | null;
+  /** The `paymentReference` the current attempt pays against (`null` when unattributed / idle). */
+  paymentReference: string | null;
+}
+
+/** Per-attempt options for {@link PayButtonController.start}. */
+export interface PayButtonStartOptions {
+  /** bytes32 `paymentReference` from your backend's `POST /api/payment/create`. */
+  paymentReference?: string;
+  /** Overrides the controller's `mode` for this attempt. */
+  mode?: PayInMode;
 }
 
 /** Options for {@link createPayButtonController}. */
@@ -43,7 +59,21 @@ export interface PayButtonControllerOptions {
    * surfaces the snapshot — useful for non-EVM stacks that handle the chain
    * call themselves. When provided, it's invoked with the merged context.
    */
-  runPayment?: (ctx: { amount: number; paymentConfig: PaymentConfig }) => Promise<{ txHash: string }>;
+  runPayment?: (ctx: {
+    amount: number;
+    paymentConfig: PaymentConfig;
+    /**
+     * Present in attributed mode (the default): pass it to `payInNativeWithReference` /
+     * `payInTokenWithReference` (see `buildPayInCall`). Absent only when `mode` is `'unattributed'`.
+     */
+    paymentReference?: PaymentReference;
+    mode: PayInMode;
+  }) => Promise<{ txHash: string }>;
+  /**
+   * `'attributed'` (default): `start()` refuses to call `runPayment` without a valid
+   * `paymentReference`. `'unattributed'`: the runner gets none — explicit opt-in.
+   */
+  mode?: PayInMode;
 }
 
 /** Public API of the headless controller. */
@@ -53,7 +83,7 @@ export interface PayButtonController {
   /** Subscribe to state changes; returns an unsubscribe fn. */
   subscribe(listener: (state: PayButtonState) => void): () => void;
   /** Trigger the flow: load config → run payment if a runner was provided. */
-  start(amount: number): Promise<void>;
+  start(amount: number, opts?: PayButtonStartOptions): Promise<void>;
   /** Reset to idle. */
   reset(): void;
   /** Manually fetch the merchant payment-config. */
@@ -66,6 +96,7 @@ const INITIAL_STATE: PayButtonState = Object.freeze({
   configLoading: false,
   error: null,
   txHash: null,
+  paymentReference: null,
 });
 
 export function createPayButtonController(opts: PayButtonControllerOptions): PayButtonController {
@@ -109,8 +140,33 @@ export function createPayButtonController(opts: PayButtonControllerOptions): Pay
     }
   };
 
-  const start = async (amount: number) => {
-    setState({ status: PaymentStatus.Connecting, error: null, txHash: null });
+  const start = async (amount: number, startOpts: PayButtonStartOptions = {}) => {
+    // Attribution is decided before config is fetched or the runner (and so the wallet) is
+    // touched. Without a runner nothing is paid here, so a missing reference is not an error —
+    // the caller that pays reads it from the snapshot.
+    let attribution: ResolvedAttribution | null = null;
+    try {
+      attribution = resolveAttribution({
+        paymentReference: startOpts.paymentReference,
+        mode: startOpts.mode ?? opts.mode,
+      });
+    } catch (err) {
+      if (opts.runPayment) {
+        setState({
+          status: PaymentStatus.Error,
+          error: err instanceof Error ? err.message : 'Invalid payment reference',
+          txHash: null,
+          paymentReference: null,
+        });
+        return;
+      }
+    }
+    setState({
+      status: PaymentStatus.Connecting,
+      error: null,
+      txHash: null,
+      paymentReference: attribution?.mode === 'attributed' ? attribution.paymentReference : null,
+    });
     if (!state.paymentConfig) {
       await loadConfig();
     }
@@ -130,6 +186,9 @@ export function createPayButtonController(opts: PayButtonControllerOptions): Pay
       const result = await opts.runPayment({
         amount,
         paymentConfig: state.paymentConfig,
+        ...(attribution?.mode === 'attributed'
+          ? { paymentReference: attribution.paymentReference, mode: 'attributed' as const }
+          : { mode: 'unattributed' as const }),
       });
       setState({ txHash: result.txHash, status: PaymentStatus.Success });
     } catch (err) {
@@ -151,6 +210,7 @@ export function createPayButtonController(opts: PayButtonControllerOptions): Pay
       status: PaymentStatus.Idle,
       txHash: null,
       error: null,
+      paymentReference: null,
     });
   };
 

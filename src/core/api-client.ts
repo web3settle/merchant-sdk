@@ -1,12 +1,8 @@
 import {
-  PaymentSessionSchema,
-  CreateSessionResponseSchema,
   QuoteResponseSchema,
   SignedPaymentConfigEnvelopeSchema,
   Web3SettleApiError,
   type PaymentConfig,
-  type PaymentSession,
-  type CreateSessionResponse,
   type QuoteResponse,
 } from './types';
 import { verifyPaymentConfig } from './payment-config-verifier';
@@ -27,12 +23,16 @@ function assertValidStorefrontId(id: string): void {
   }
 }
 
-function assertValidSessionId(id: string): void {
-  if (!UUID_REGEX.test(id)) {
-    throw new Error(`Invalid sessionId: must be a UUID`);
-  }
-}
-
+/**
+ * Browser-safe client for the storefront's public endpoints (signed payment config, quotes).
+ *
+ * It deliberately has no "create payment" call: `POST /api/payment/create` needs the storefront's
+ * API key, which must stay on the merchant's server. The merchant backend creates the payment and
+ * hands the browser its `paymentReference` (see `Web3SettleConfig.createPayment` and
+ * `StartPaymentOptions.paymentReference`). The 0.5 `createTopUpSession` / `getSessionStatus` pair
+ * targeted `/api/storefronts/{id}/sessions`, which no gateway ever served (404), and was removed
+ * in 0.6.0.
+ */
 export class Web3SettleApiClient {
   private readonly baseUrl: URL;
   private readonly storefrontId: string;
@@ -104,23 +104,6 @@ export class Web3SettleApiClient {
     return envelope.data;
   }
 
-  async createTopUpSession(
-    userId: string,
-    amount: number,
-    idempotencyKey: string,
-    signal?: AbortSignal,
-  ): Promise<CreateSessionResponse> {
-    const raw = await this.request(
-      `api/storefronts/${this.storefrontId}/sessions`,
-      {
-        method: 'POST',
-        body: { userId, amount, idempotencyKey },
-        signal,
-      },
-    );
-    return this.parse(raw, CreateSessionResponseSchema, 'session');
-  }
-
   /**
    * Server-side USD → token quote backed by Chainlink. Use the returned `amountToken` (atomic,
    * decimal string) as the `value` / `amount` arg when building the on-chain tx so the user
@@ -145,15 +128,6 @@ export class Web3SettleApiClient {
       { signal },
     );
     return this.parse(raw, QuoteResponseSchema, 'quote');
-  }
-
-  async getSessionStatus(sessionId: string, signal?: AbortSignal): Promise<PaymentSession> {
-    assertValidSessionId(sessionId);
-    const raw = await this.request(
-      `api/storefronts/${this.storefrontId}/sessions/${sessionId}`,
-      { signal },
-    );
-    return this.parse(raw, PaymentSessionSchema, 'session status');
   }
 
   private parse<T>(

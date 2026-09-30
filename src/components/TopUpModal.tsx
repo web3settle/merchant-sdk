@@ -109,6 +109,7 @@ export function Web3SettleTopUpModal({
   isOpen,
   onClose,
   amount: fixedAmount,
+  userId,
 }: TopUpModalProps) {
   const { config } = useWeb3SettleContext();
   const { paymentConfig, isLoading: configLoading, error: configError, refetch: refetchConfig } =
@@ -129,6 +130,11 @@ export function Web3SettleTopUpModal({
   const [selectedToken, setSelectedToken] = useState<string | null>(null);
   const [tokenBalance, setTokenBalance] = useState<string | null>(null);
   const [showConnectorList, setShowConnectorList] = useState(false);
+  // The merchant backend's createPayment step (paymentReference). Its failure is shown like a
+  // payment failure; `requestId` becomes the onSuccess session id.
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [creatingPayment, setCreatingPayment] = useState(false);
+  const [requestId, setRequestId] = useState<string | null>(null);
 
   // Reset on open so opening the modal twice in a row doesn't keep stale state from the first
   // round (esp. payment status — closing on success and re-opening should give a fresh form).
@@ -139,6 +145,9 @@ export function Web3SettleTopUpModal({
     setSelectedToken(null);
     setTokenBalance(null);
     setShowConnectorList(false);
+    setCreateError(null);
+    setCreatingPayment(false);
+    setRequestId(null);
     resetPayment();
   }, [isOpen, resetPayment]);
 
@@ -281,7 +290,7 @@ export function Web3SettleTopUpModal({
   useEffect(() => {
     if (status === PaymentStatus.Success && txHash && onSuccess) {
       onSuccess({
-        id: '00000000-0000-0000-0000-000000000000',
+        id: requestId ?? '00000000-0000-0000-0000-000000000000',
         amount: effectiveAmount ?? 0,
         status: 'confirmed',
         txHash,
@@ -289,7 +298,7 @@ export function Web3SettleTopUpModal({
         token: selectedTokenOption?.symbol,
       });
     }
-  }, [status, txHash, onSuccess, effectiveAmount, selectedChain, selectedTokenOption]);
+  }, [status, txHash, onSuccess, effectiveAmount, selectedChain, selectedTokenOption, requestId]);
 
   useEffect(() => {
     if (status === PaymentStatus.Error && paymentError && onError) {
@@ -321,6 +330,7 @@ export function Web3SettleTopUpModal({
 
   // ── Action: pay ──────────────────────────────────────────────────────────
   const isProcessing =
+    creatingPayment ||
     status === PaymentStatus.Connecting ||
     status === PaymentStatus.Approving ||
     status === PaymentStatus.Sending ||
@@ -335,20 +345,57 @@ export function Web3SettleTopUpModal({
     !quoteError &&
     !isProcessing;
 
-  const handlePay = useCallback(() => {
-    if (!canPay || !selectedChain || !selectedToken || !quote || !effectiveAmount) return;
-    void startPayment(effectiveAmount, selectedChain, selectedToken, {
+  const { createPayment, payInMode } = config;
+  const handlePay = useCallback(async () => {
+    if (!canPay || !selectedChain || !selectedToken || !quote || !effectiveAmount || !selectedTokenOption) return;
+    setCreateError(null);
+    // Attributed (the default): the merchant backend creates the payment for exactly what is about
+    // to be sent and hands back its paymentReference; only then is the wallet prompted.
+    let paymentReference: `0x${string}` | undefined;
+    if (payInMode !== 'unattributed') {
+      if (!createPayment) {
+        setCreateError(
+          'Payments are not attributable: this storefront has no createPayment callback configured ' +
+            '(Web3SettleConfig.createPayment), so the payment would reach the merchant without an order.',
+        );
+        return;
+      }
+      setCreatingPayment(true);
+      try {
+        const created = await createPayment({
+          chainId: selectedChain.chainId,
+          chainName: selectedChain.name,
+          token: selectedToken,
+          tokenSymbol: selectedTokenOption.symbol,
+          decimals: selectedTokenOption.decimals,
+          atomicAmount: quote.amountToken,
+          amount: formatUnits(BigInt(quote.amountToken), selectedTokenOption.decimals),
+          amountUsd: effectiveAmount,
+          userId,
+        });
+        paymentReference = created.paymentReference;
+        setRequestId(created.requestId ?? null);
+      } catch (err) {
+        setCreateError(err instanceof Error ? err.message : 'Could not create the payment');
+        return;
+      } finally {
+        setCreatingPayment(false);
+      }
+    }
+    await startPayment(effectiveAmount, selectedChain, selectedToken, {
       atomicAmount: quote.amountToken,
       onTelemetry: config.onTelemetry,
       contractVersion: config.contractVersion,
+      paymentReference,
+      mode: payInMode,
     });
-  }, [canPay, selectedChain, selectedToken, quote, effectiveAmount, startPayment, config.onTelemetry, config.contractVersion]);
+  }, [canPay, selectedChain, selectedToken, selectedTokenOption, quote, effectiveAmount, startPayment, createPayment, payInMode, userId, config.onTelemetry, config.contractVersion]);
 
   if (!isOpen) return null;
 
   // ── Render ───────────────────────────────────────────────────────────────
   const showSuccess = status === PaymentStatus.Success;
-  const showError = status === PaymentStatus.Error && paymentError;
+  const showError = createError !== null || (status === PaymentStatus.Error && Boolean(paymentError));
 
   return (
     <div
@@ -514,8 +561,11 @@ export function Web3SettleTopUpModal({
               {/* Inline error from a previously failed payment attempt. */}
               {showError && (
                 <ErrorBanner
-                  message={paymentError ?? 'Payment failed'}
-                  onDismiss={resetPayment}
+                  message={createError ?? paymentError ?? 'Payment failed'}
+                  onDismiss={() => {
+                    setCreateError(null);
+                    resetPayment();
+                  }}
                 />
               )}
 
@@ -533,7 +583,7 @@ export function Web3SettleTopUpModal({
                 <>
                   <button
                     type="button"
-                    onClick={handlePay}
+                    onClick={() => void handlePay()}
                     disabled={!canPay || !effectiveAmount}
                     className="
                       w3s-w-full w3s-rounded-xl w3s-bg-indigo-600 w3s-py-3

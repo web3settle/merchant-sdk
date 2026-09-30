@@ -20,6 +20,33 @@ export const PAYMENT_CONTRACT_ABI = [
     stateMutability: 'nonpayable',
     type: 'function',
   },
+  // MerchantPayIn V3.2.3: the same pay-ins plus a `PaymentReference(bytes32 indexed)` event. The
+  // gateway attributes a deposit to the payment request whose `paymentReference` it carries
+  // (`POST /api/payment/create` → `paymentReference`); plain payIn* deposits stay unattributed.
+  {
+    inputs: [{ internalType: 'bytes32', name: 'paymentRef', type: 'bytes32' }],
+    name: 'payInNativeWithReference',
+    outputs: [],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { internalType: 'address', name: 'token', type: 'address' },
+      { internalType: 'uint256', name: 'amount', type: 'uint256' },
+      { internalType: 'bytes32', name: 'paymentRef', type: 'bytes32' },
+    ],
+    name: 'payInTokenWithReference',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    anonymous: false,
+    inputs: [{ indexed: true, internalType: 'bytes32', name: 'paymentRef', type: 'bytes32' }],
+    name: 'PaymentReference',
+    type: 'event',
+  },
 ] as const;
 
 export const ERC20_ABI = [
@@ -117,8 +144,6 @@ export const COINGECKO_CHAIN_IDS: Record<number, string> = {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-export const SESSION_POLL_INTERVAL_MS = 3000;
-export const MAX_POLL_ATTEMPTS = 60;
 export const PRICE_CACHE_TTL_MS = 60_000;
 
 // ── PaymentConfig signature verification (premortem F2) ──────────────────────
