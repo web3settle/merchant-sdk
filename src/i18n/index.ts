@@ -33,7 +33,7 @@ export function ensureSdkI18n(): I18nInstance {
     },
     defaultNS: SDK_NAMESPACE,
     fallbackLng: 'en',
-    supportedLngs: SUPPORTED_LOCALES as unknown as string[],
+    supportedLngs: SUPPORTED_LOCALES,
     interpolation: { escapeValue: false },
   });
   return sdkInstance;

@@ -7,7 +7,7 @@
  * and emits a small CustomEvent vocabulary the merchant can listen for.
  *
  * Events:
- *   - `payment-started`   detail: `{ amount: number }`
+ *   - `payment-started`   detail: `{ amount: number; paymentReference: string | null }`
  *   - `payment-success`   detail: `{ amount: number; txHash: string }`
  *   - `payment-error`     detail: `{ amount: number; message: string }`
  *
@@ -15,6 +15,10 @@
  *   - `amount` (required) — USD amount to charge
  *   - `storefront-id` (required) — UUID
  *   - `api-base-url` (required) — Web3Settle API base URL
+ *   - `payment-reference` (optional) — the bytes32 `paymentReference` your backend got from
+ *     `POST /api/payment/create` for this order. Validated on click (a malformed value raises
+ *     `payment-error`) and handed to the controller and to `payment-started`, so the handler that
+ *     sends the transaction calls `payIn*WithReference` and the gateway attributes the deposit.
  *   - `label` (optional) — button text override
  *   - `disabled` (boolean attribute) — disables click
  */
@@ -24,6 +28,7 @@ import {
   type PayButtonState,
 } from '../headless/usePayButton';
 import { PaymentStatus } from '../core/types';
+import { isPaymentReference } from '../core/payment-reference';
 
 const TEMPLATE = `
 <style>
@@ -55,7 +60,7 @@ const TEMPLATE = `
 /** Public class. Registered on construction via {@link registerWebComponents}. */
 export class Web3SettlePayButtonElement extends HTMLElement {
   static get observedAttributes(): string[] {
-    return ['amount', 'storefront-id', 'api-base-url', 'label', 'disabled'];
+    return ['amount', 'storefront-id', 'api-base-url', 'payment-reference', 'label', 'disabled'];
   }
 
   private controller: PayButtonController | null = null;
@@ -126,8 +131,15 @@ export class Web3SettlePayButtonElement extends HTMLElement {
       }));
       return;
     }
-    this.dispatchEvent(new CustomEvent('payment-started', { detail: { amount } }));
-    void controller.start(amount);
+    const paymentReference = this.getAttribute('payment-reference');
+    if (paymentReference !== null && !isPaymentReference(paymentReference)) {
+      this.dispatchEvent(new CustomEvent('payment-error', {
+        detail: { amount, message: 'Invalid payment-reference attribute (expected a non-zero bytes32 hex)' },
+      }));
+      return;
+    }
+    this.dispatchEvent(new CustomEvent('payment-started', { detail: { amount, paymentReference } }));
+    void controller.start(amount, paymentReference !== null ? { paymentReference } : {});
   };
 
   private handleStateChange = (state: PayButtonState): void => {

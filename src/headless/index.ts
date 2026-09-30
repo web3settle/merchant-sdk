@@ -14,7 +14,22 @@ export {
   type PayButtonState,
   type PayButtonController,
   type PayButtonControllerOptions,
+  type PayButtonStartOptions,
 } from './usePayButton';
+export {
+  buildPayInCall,
+  executePayInNativeWithReference,
+  executePayInTokenWithReference,
+} from '../core/contract';
+export {
+  isPaymentReference,
+  assertPaymentReference,
+  resolveAttribution,
+  MissingPaymentReferenceError,
+  InvalidPaymentReferenceError,
+  type PaymentReference,
+  type PayInMode,
+} from '../core/payment-reference';
 export {
   createWalletConnectController,
   type WalletConnectState,

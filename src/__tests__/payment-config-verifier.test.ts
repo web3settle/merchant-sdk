@@ -6,7 +6,7 @@ import { PAYMENT_CONFIG_MAX_AGE_MS } from '../core/config';
 
 function bytesToHex(b: Uint8Array): string {
   let s = '';
-  for (let i = 0; i < b.length; i += 1) s += b[i].toString(16).padStart(2, '0');
+  for (const byte of b) s += byte.toString(16).padStart(2, '0');
   return s;
 }
 

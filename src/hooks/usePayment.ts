@@ -4,7 +4,9 @@ import { parseUnits } from 'viem';
 import { PaymentStatus, NATIVE_TOKEN_SENTINEL, type ChainConfig, type TokenSelection } from '../core/types';
 import {
   executePayInNative,
+  executePayInNativeWithReference,
   executePayInToken,
+  executePayInTokenWithReference,
   approveToken,
   checkAllowance,
   submitPermit,
@@ -25,8 +27,26 @@ import {
   defaultConfirmationPolicy,
   type ConfirmationPolicy,
 } from '../core/ConfirmationPolicy';
+import { resolveAttribution, type PayInMode, type ResolvedAttribution } from '../core/payment-reference';
 
-interface StartPaymentOptions {
+export interface StartPaymentOptions {
+  /**
+   * The bytes32 `paymentReference` your backend got from `POST /api/payment/create` for this
+   * order. The SDK then calls `payInNativeWithReference` / `payInTokenWithReference` (MerchantPayIn
+   * V3.2.3) and the gateway attributes the deposit to that payment request: its status advances and
+   * the `payment.confirmed` webhook carries the request's `paymentRequestId` and `metadata`.
+   *
+   * Create the payment with the token amount you are about to send (`atomicAmount` in whole
+   * token units), not a USD figure: the gateway only links a deposit of at least the requested
+   * amount, in the requested asset.
+   */
+  paymentReference?: `0x${string}`;
+  /**
+   * `'attributed'` (default) requires `paymentReference` and refuses to prompt the wallet without
+   * one. `'unattributed'` sends the plain `payIn*` — the deposit is linked to no request, so it
+   * reaches your webhook without `paymentRequestId` / `metadata`. Explicit opt-in only.
+   */
+  mode?: PayInMode;
   /**
    * Pre-fetched atomic token amount (smallest unit, decimal string) from the server-side
    * <c>/quote</c> endpoint. When provided, the hook skips its own CoinGecko-based conversion
@@ -133,6 +153,16 @@ export function usePayment(): UsePaymentReturn {
         setStatus(PaymentStatus.Error);
         return;
       }
+      // Decide attribution before anything reaches the wallet: attributed mode (the default)
+      // never prompts without a valid reference.
+      let attribution: ResolvedAttribution;
+      try {
+        attribution = resolveAttribution({ paymentReference: opts.paymentReference, mode: opts.mode });
+      } catch (err) {
+        setError(classifyError(err));
+        setStatus(PaymentStatus.Error);
+        return;
+      }
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -183,7 +213,15 @@ export function usePayment(): UsePaymentReturn {
 
           phase = 'send';
           setStatus(PaymentStatus.Sending);
-          const hash = await executePayInNative(walletClient, contractAddress, weiAmount);
+          const hash =
+            attribution.mode === 'attributed'
+              ? await executePayInNativeWithReference(
+                  walletClient,
+                  contractAddress,
+                  weiAmount,
+                  attribution.paymentReference,
+                )
+              : await executePayInNative(walletClient, contractAddress, weiAmount);
           setTxHash(hash);
 
           phase = 'confirm';
@@ -308,12 +346,16 @@ export function usePayment(): UsePaymentReturn {
 
         phase = 'send';
         setStatus(PaymentStatus.Sending);
-        const hash = await executePayInToken(
-          walletClient,
-          contractAddress,
-          tokenAddress,
-          rawAmount,
-        );
+        const hash =
+          attribution.mode === 'attributed'
+            ? await executePayInTokenWithReference(
+                walletClient,
+                contractAddress,
+                tokenAddress,
+                rawAmount,
+                attribution.paymentReference,
+              )
+            : await executePayInToken(walletClient, contractAddress, tokenAddress, rawAmount);
         setTxHash(hash);
 
         phase = 'confirm';

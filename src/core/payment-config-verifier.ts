@@ -55,7 +55,7 @@ export type PaymentConfigVerifyResult = PaymentConfigVerifyOk | PaymentConfigVer
 function trustedKeys(override?: { primary?: string; secondary?: string }): string[] {
   const primary = override?.primary ?? WEB3SETTLE_PAYMENT_CONFIG_PUBKEY_PRIMARY;
   const secondary = override?.secondary ?? WEB3SETTLE_PAYMENT_CONFIG_PUBKEY_SECONDARY;
-  return [primary, secondary].filter((k): k is string => Boolean(k && k.length === 64));
+  return [primary, secondary].filter((k): k is string => Boolean(k?.length === 64));
 }
 
 function hexToBytes(hex: string): Uint8Array | null {
@@ -124,7 +124,7 @@ export function verifyPaymentConfig(input: VerifyInput): PaymentConfigVerifyResu
   }
   for (const key of keys) {
     const pubBytes = hexToBytes(key);
-    if (!pubBytes || pubBytes.length !== 32) continue;
+    if (pubBytes?.length !== 32) continue;
     try {
       if (ed25519.verify(sigBytes, message, pubBytes)) {
         return { ok: true, matchedKey: key };

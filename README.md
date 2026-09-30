@@ -20,6 +20,81 @@ React component library for accepting crypto payments via Web3Settle. Drop in a 
 
 EVM-only consumers never pay the bundle cost of the TRON stack; TRON-only consumers never pull wagmi. Import only the subpaths you need.
 
+## How a payment reaches your order (read this first)
+
+The gateway can only tell you *who* paid if the pay-in carries a **payment reference**. The flow
+is four steps, and only the second happens in the browser:
+
+```
+your server ──POST /api/payment/create (X-Api-Key)──▶ gateway      → { requestId, paymentReference, status: "pending" }
+browser     ──SDK: payInNativeWithReference / payInTokenWithReference(paymentReference)──▶ merchant contract (MerchantPayIn ≥ V3.2.3)
+gateway     ──detects the deposit, links it to the request──▶ status: pending → processing → confirmed
+gateway     ──POST payment.confirmed (X-Webhook-Signature: v1=…)──▶ your webhook → credit data.metadata.userId
+```
+
+1. **Create the payment on your server** — never in the browser; it needs your storefront API key.
+   Put what you need back on the webhook into `metadata` (the webhook has no `userId` field of its
+   own). `amount` is in **whole token units of the asset you will be paid in** (e.g. `0.01` ETH or
+   `9.99` USDC), not USD: the gateway only links a deposit of at least that amount, in that asset,
+   on that network, into that storefront's contract.
+
+   ```ts
+   // server-side (Node)
+   const res = await fetch(`${GATEWAY}/api/payment/create`, {
+     method: 'POST',
+     headers: { 'content-type': 'application/json', 'x-api-key': process.env.WEB3SETTLE_API_KEY!, 'idempotency-key': orderId },
+     body: JSON.stringify({
+       network: 1,                   // BlockchainNetwork ordinal: Ethereum 0, Base 1, Tron 2
+       toAddress: contractAddress,   // GET /api/payment/deposit-address?network=Base
+       amount: 0.01,                 // whole units of the token below (here: ETH)
+       tokenAddress: undefined,      // ERC-20 address, or omit for the native coin
+       metadata: { userId, orderId },
+     }),
+   });
+   const { requestId, paymentReference } = await res.json(); // paymentReference: bytes32 hex
+   ```
+
+2. **Pay with the reference in the browser.** Either hand it to the hook yourself…
+
+   ```tsx
+   const { startPayment } = usePayment();
+   await startPayment(amountUsd, chain, token, { atomicAmount, paymentReference });
+   ```
+
+   …or let the modal ask your backend at click time through `createPayment` (it passes the exact
+   token, chain and amount about to be sent, plus `userId`):
+
+   ```tsx
+   <Web3SettleProvider config={{ apiBaseUrl, storefrontId,
+     createPayment: async (ctx) => (await fetch('/api/checkout', { method: 'POST', body: JSON.stringify(ctx) })).json(),
+   }}>
+   ```
+
+   Attribution is the **default and is enforced**: without a valid reference the SDK refuses before
+   the wallet is prompted (`MissingPaymentReferenceError`). The plain `payInNative()` /
+   `payInToken()` still exist behind the explicit `mode: 'unattributed'` opt-in — such a deposit is
+   detected and settled, but reaches your webhook with no `paymentRequestId` and no `metadata`.
+
+3. **Poll or wait.** `GET /api/payment/status/{requestId}` (server-side, same API key) goes
+   `pending` → `processing` (deposit seen, with `txHash` and live `confirmations`) → `confirmed`
+   (required depth reached) — or `failed` if a reorg removed the deposit.
+
+4. **Credit on the webhook, not on the browser's success callback.** Verify
+   `X-Webhook-Signature: v1=hex(HMAC-SHA256(secret, "{X-Webhook-Timestamp}.{rawBody}"))` over the raw
+   body, reject stale timestamps, ignore `test: true`, dedupe on `data.txHash`, and credit
+   `data.metadata.userId`. `data.amountPaid` is what arrived (gross); `data.amountInvoiced` is what
+   the request asked for — credit `min(amountPaid, amountInvoiced)` unless you handle overpayment.
+
+Needs a merchant contract at **MerchantPayIn V3.2.3** or later; a V3.2.2 contract has no
+`…WithReference` functions and the wallet's gas estimation fails. TRON pay-ins are not yet
+reference-aware in this SDK (the contract and gateway are) — follow-up.
+
+> **Known limitation (0.6.0).** `WEB3SETTLE_PAYMENT_CONFIG_PUBKEY_PRIMARY` is still the all-zero
+> development placeholder, so the signed `GET /payment-config` never verifies against a real gateway
+> and `Web3SettlePayButton` / `Web3SettleTopUpModal` cannot load their chain list. Until the real key
+> ships in an SDK release, drive payments with `usePayment` and your own `ChainConfig` (what
+> `merchant-integration-demo` does). Tracked in the workspace `humanpending.md`.
+
 ## Features
 
 - Three chains across two stacks: **Ethereum, Base** (wagmi + viem) and **TRON** (TronLink)
@@ -54,10 +129,10 @@ All four are **peer dependencies** — they must live in your app's own `node_mo
 |---|---|
 | `react` | `^18.0.0 \|\| ^19.0.0` |
 | `react-dom` | `^18.0.0 \|\| ^19.0.0` |
-| `wagmi` | `^2.14.0` |
-| `viem` | `^2.21.0` |
-| `@wagmi/core` | `^2.16.0` |
-| `@tanstack/react-query` | `^5.62.0` |
+| `wagmi` | `^3.6.16` |
+| `viem` | `^2.52.2` |
+| `@wagmi/core` | `^3.5.0` (optional) |
+| `@tanstack/react-query` | `^5.101.0` |
 
 ## Quick start
 
@@ -73,7 +148,10 @@ function App() {
       config={{
         apiBaseUrl: 'https://api.yoursite.com',
         storefrontId: 'your-storefront-uuid',
-        onSuccess: (session) => console.log('Payment confirmed:', session.txHash),
+        // Your backend creates the gateway payment and returns { paymentReference, requestId }.
+        createPayment: (ctx) => fetch('/api/checkout', { method: 'POST', body: JSON.stringify(ctx) }).then((r) => r.json()),
+        // Browser-side "tx mined" signal only — credit the user from the signed webhook.
+        onSuccess: (session) => console.log('Payment sent:', session.id, session.txHash),
         onError: (error) => console.error('Payment failed:', error),
       }}
       walletConnectProjectId="your-wc-project-id" // optional
@@ -200,7 +278,7 @@ so you can build your own chain-agnostic UI if the default modals don't suit.
 | Hook | Description |
 |------|-------------|
 | `useWeb3Settle()` | Access SDK config + cached payment configuration loaded from the API. Exposes `refetch()`. |
-| `usePayment()` | Full payment lifecycle: chain switch, USD→token conversion, approval, pay-in, receipt wait. Returns `{ status, txHash, error, startPayment, reset }`. |
+| `usePayment()` | Full payment lifecycle: chain switch, USD→token conversion, approval, pay-in, receipt wait. Returns `{ status, txHash, error, startPayment, reset }`. `startPayment(amount, chain, token, { paymentReference })` pays with `payIn*WithReference`; without a reference it refuses unless `mode: 'unattributed'`. |
 | `useWallet()` | Wagmi-wrapped convenience hook: `{ address, isConnected, chainId, balance, balanceSymbol, displayAddress, connectors, connect, disconnect, error }`. |
 
 ### Low-level utilities
@@ -210,8 +288,16 @@ Useful if you want to drive payments without the UI, or integrate with an existi
 ```ts
 import {
   // Contract interaction
-  executePayInNative,
+  executePayInNativeWithReference, // attributed (V3.2.3) — use these for orders
+  executePayInTokenWithReference,
+  buildPayInCall,                  // pure: { data, value } for either form
+  executePayInNative,              // unattributed — no paymentRequestId/metadata on the webhook
   executePayInToken,
+  // Payment references
+  isPaymentReference,
+  resolveAttribution,
+  MissingPaymentReferenceError,
+  InvalidPaymentReferenceError,
   approveToken,
   checkAllowance,
   getTokenBalance,
@@ -240,8 +326,6 @@ import {
   DEFAULT_CHAINS,
   CHAIN_ICONS,
   COINGECKO_CHAIN_IDS,
-  SESSION_POLL_INTERVAL_MS,
-  MAX_POLL_ATTEMPTS,
   PRICE_CACHE_TTL_MS,
   NATIVE_TOKEN_SENTINEL,
   // Zod schemas (validate at runtime)
@@ -249,7 +333,6 @@ import {
   ChainConfigSchema,
   PaymentConfigSchema,
   PaymentSessionSchema,
-  CreateSessionResponseSchema,
   Web3SettleConfigSchema,
   // Enums
   PaymentStatus,
@@ -261,7 +344,11 @@ import type {
   ChainConfig,
   PaymentConfig,
   PaymentSession,
-  CreateSessionResponse,
+  CreatePaymentContext,
+  CreatedPayment,
+  StartPaymentOptions,
+  PaymentReference,
+  PayInMode,
   Web3SettleConfig,
   PayButtonProps,
   TopUpModalProps,
@@ -293,7 +380,9 @@ import type {
 | `apiBaseUrl` | `string` | Yes | HTTPS URL of the Web3Settle backend (`MerchantPaymentApi`). |
 | `storefrontId` | `string` | Yes | Your storefront UUID from the back office. |
 | `theme` | `'dark' \| 'light'` | No | UI theme. Default `'dark'`. (Only `dark` ships today; `light` is reserved.) |
-| `onSuccess` | `(session: PaymentSession) => void` | No | Fires after the tx is confirmed at the chain's required depth. |
+| `createPayment` | `(ctx: CreatePaymentContext) => Promise<{ paymentReference, requestId? }>` | Yes, unless `payInMode: 'unattributed'` | Called on Pay, before the wallet prompt. Your backend creates the gateway payment for exactly `ctx.amount` of `ctx.token` and returns its `paymentReference`. |
+| `payInMode` | `'attributed' \| 'unattributed'` | No | Default `'attributed'`. `'unattributed'` sends the plain `payIn*` (no order linkage). |
+| `onSuccess` | `(session: PaymentSession) => void` | No | Fires after the tx is mined at the SDK's receipt depth. `session.id` is the `requestId` from `createPayment`. Not a credit signal — credit from the webhook. |
 | `onError` | `(error: Error) => void` | No | Fires on any unrecoverable failure (revert, user rejection, network error). |
 
 ### `PayButtonProps`
@@ -523,12 +612,13 @@ All three use the same `MerchantPayIn` V3.0 contract model — immutable commiss
 - **Signed PaymentConfig (V0.5+).** `GET /payment-config` returns `{ data, signedAt, signature }`; the SDK refuses to build calldata unless the Ed25519 signature verifies against `WEB3SETTLE_PAYMENT_CONFIG_PUBKEY_PRIMARY` (or `_SECONDARY` during a rotation overlap) over `signedAt + canonical_json(data)`. The constants are baked into the SDK at release time so a poisoned-DNS or CDN-edge MITM that swaps the contract address cannot be silently honoured. The `.well-known/web3settle-config-pubkey` endpoint mirrors the constants for out-of-band drift checks.
 - **Contract allowlist.** The SDK refuses to call `payIn*` against any address that is neither in the baked-in `KNOWN_CONTRACT_ADDRESSES` nor explicitly elevated by the signed `allowedContractAddresses` map for the storefront. New canonical addresses require an SDK release.
 - **ABI version handshake.** The signed payload carries `contractAbiVersion`. The SDK fails closed when it sees a revision not in `SUPPORTED_ABI_VERSIONS`.
-- **Permit allowlist.** `permit: 'auto'` falls back to `approve()` for any token whose `(name, version, chainId, verifyingContract)` quadruple is not in the SDK's baked-in `KNOWN_PERMIT_TOKENS`. `permit: 'require'` raises `UnknownPermitTokenError` on unknown tokens. To add a token, compute `permitDomainKey(name, version, chainId, verifyingContract)` and PR the resulting hex digest into `core/config.ts`; the addition ships in the next SDK release.
+- **Permit allowlist.** `permit: 'auto'` falls back to `approve()` for any token whose `(name, version, chainId, verifyingContract)` quadruple is not in the SDK's baked-in `KNOWN_PERMIT_TOKENS` (0.6.0: USDC Ethereum, DAI Ethereum, USDC Base — verified on-chain, see `docs/PERMIT_ALLOWLIST.md`). A token whose `PERMIT_TYPEHASH` is not EIP-2612's (DAI) is treated as permit-unsupported and also uses `approve()`. `permit: 'require'` raises `UnknownPermitTokenError` on unknown tokens. To add a token, compute `permitDomainKey(name, version, chainId, verifyingContract)` and PR the resulting hex digest into `core/config.ts`; the addition ships in the next SDK release.
 - **Salted telemetry digests.** `walletDigest` is salted by `(storefrontId, dayUtc)` so two storefronts of the same wallet cannot be cross-joined and the same shop's digests rotate every UTC day.
 - ERC-20 approvals request only the exact amount needed — **never** unlimited.
 - Transaction receipts are verified for `status === 'success'`; reverts surface as an `Error`.
 - Wallet connections use standard EIP-1193 providers via wagmi; the SDK does not read or persist private keys.
-- `Web3SettleApiClient` validates `storefrontId` + `sessionId` as UUIDs at construction time and builds URLs via the `URL` constructor (no string concat).
+- `Web3SettleApiClient` validates `storefrontId` as a UUID at construction time and builds URLs via the `URL` constructor (no string concat). It has no payment-creation call: that needs your API key and belongs on your server.
+- **Payment references are public.** Anyone can pay any contract with any reference; the gateway only links a deposit that could settle the request (same merchant, storefront, network, asset; at least the amount; request still pending). Never treat "a tx with my reference exists" as payment — wait for `confirmed` / the signed webhook.
 - Modal: `role="dialog"` + `aria-modal` + focus restoration + ESC-key close. Click-outside closes on mouse but the Escape handler is always present for keyboard-only users.
 
 ### Adding a token to the permit allowlist
@@ -542,8 +632,9 @@ console.log(permitDomainKey('USD Coin', '2', 1, '0xa0b86991c6218b36c1d19d4a2e9eb
 // → "<64-char hex>"
 ```
 
-Open a PR against `merchant-sdk/src/core/config.ts` adding the digest to
-`KNOWN_PERMIT_TOKENS`. Include in the PR body the source you used to verify the
+Read `name()` / `version()` from the token itself and check its `DOMAIN_SEPARATOR()` against the
+quadruple first — `docs/PERMIT_ALLOWLIST.md` has the script. Open a PR against
+`merchant-sdk/src/core/config.ts` adding the digest to `KNOWN_PERMIT_TOKENS`. Include in the PR body the source you used to verify the
 contract address (Etherscan label, official docs link). The merge ships in the
 next SDK release; backend deploys alone cannot expand the set.
 

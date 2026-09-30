@@ -52,8 +52,8 @@ export function permitDomainKey(
   const input = `${name}|${version}|${chainId}|${verifyingContract.toLowerCase()}`;
   const bytes = sha256(new TextEncoder().encode(input));
   let hex = '';
-  for (let i = 0; i < bytes.length; i += 1) {
-    hex += (bytes[i] ?? 0).toString(16).padStart(2, '0');
+  for (const byte of bytes) {
+    hex += byte.toString(16).padStart(2, '0');
   }
   return hex;
 }
@@ -104,6 +104,21 @@ const EIP2612_ABI = [
   },
 ] as const;
 
+/** Optional view some permit tokens expose (USDC, DAI); OpenZeppelin's ERC20Permit does not. */
+const PERMIT_TYPEHASH_ABI = [
+  {
+    inputs: [],
+    name: 'PERMIT_TYPEHASH',
+    outputs: [{ name: '', type: 'bytes32' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const;
+
+/** keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)") */
+export const EIP2612_PERMIT_TYPEHASH =
+  '0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9';
+
 /** Default DAI/USDC/USDT permit version when the token doesn't expose `version()`. */
 const DEFAULT_PERMIT_VERSION = '1';
 
@@ -130,6 +145,12 @@ export interface PermitSupport {
   version?: string;
   /** Current `nonces(owner)` for the owner. */
   nonce?: bigint;
+  /**
+   * Why `supported` is false when the token answered the views but its permit is not EIP-2612
+   * (DAI's `permit(holder, spender, nonce, expiry, allowed, …)`): signing our EIP-2612 payload for
+   * it could never be redeemed, so callers must use `approve()`.
+   */
+  reason?: 'non-eip2612-permit';
 }
 
 /**
@@ -179,6 +200,24 @@ export async function detectPermitSupport(
       abi: EIP2612_ABI,
       functionName: 'DOMAIN_SEPARATOR',
     });
+
+    // A token that publishes a PERMIT_TYPEHASH other than EIP-2612's has a different permit
+    // (DAI: Permit(holder,spender,nonce,expiry,allowed), verified on mainnet 2026-09-30). The
+    // views above all succeed for it, so without this check `permit: 'auto'` would sign a payload
+    // the token cannot verify and then call a `permit` selector it does not have.
+    let typehash: string | undefined;
+    try {
+      typehash = await publicClient.readContract({
+        address: tokenAddress,
+        abi: PERMIT_TYPEHASH_ABI,
+        functionName: 'PERMIT_TYPEHASH',
+      });
+    } catch {
+      // Not exposed (e.g. OpenZeppelin ERC20Permit) — nothing to contradict EIP-2612.
+    }
+    if (typeof typehash === 'string' && typehash.toLowerCase() !== EIP2612_PERMIT_TYPEHASH) {
+      return { supported: false, reason: 'non-eip2612-permit' };
+    }
 
     return {
       supported: true,
