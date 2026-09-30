@@ -5,9 +5,65 @@ All notable changes to `@web3settle/merchant-sdk` will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — Restore lint + build under ESLint 10 / Tailwind v4 (2026-09-24)
+## [0.6.0] — Reference-aware pay-ins, real permit allowlist (unpublished, 2026-09-30)
 
-Toolchain only. **No public API change, and the version stays `0.5.0`.** Every
+**Breaking** (0.x minor). This change publishes nothing; merging it to `develop` lets CI publish its usual `0.6.0-dev.<run>` prerelease to GitHub Packages (HP-3).
+Supersedes merchant-sdk#47, whose toolchain repair is carried unchanged below.
+
+### Added — pay-ins attributed to a payment request (MerchantPayIn V3.2.3, HP-16)
+
+- `PAYMENT_CONTRACT_ABI` gains `payInNativeWithReference(bytes32)`,
+  `payInTokenWithReference(address,uint256,bytes32)` and the `PaymentReference(bytes32 indexed)`
+  event; selectors pinned in tests against the compiled V3.2.3 artifact.
+- `executePayInNativeWithReference` / `executePayInTokenWithReference`, and the pure
+  `buildPayInCall({ token, amount, paymentReference? })` every path shares.
+- `usePayment().startPayment(…, { paymentReference })` sends the `…WithReference` call.
+- `Web3SettleConfig.createPayment(ctx)` — the modal asks the merchant backend for the reference at
+  Pay time, handing it the exact chain / token / amount (and `userId`, which the modal used to drop).
+  `onSuccess(session).id` is now the `requestId`, not a zero UUID.
+- Headless `createPayButtonController`: `start(amount, { paymentReference })`; the runner receives
+  it. `<web3settle-pay-button payment-reference="0x…">` validates it and emits it on `payment-started`.
+- `isPaymentReference`, `assertPaymentReference`, `resolveAttribution`,
+  `MissingPaymentReferenceError`, `InvalidPaymentReferenceError`.
+
+### Changed — attribution is the default and is enforced
+
+Every pay path resolves attribution before the wallet is prompted. Without a valid non-zero bytes32
+reference it refuses (`MissingPaymentReferenceError`). The plain `payInNative()` / `payInToken()`
+remain behind the explicit `mode: 'unattributed'` (`payInMode` on the config) opt-in: such deposits
+settle but reach the webhook with no `paymentRequestId` / `metadata`.
+
+### Removed
+
+- `Web3SettleApiClient.createTopUpSession` / `getSessionStatus`, `CreateSessionResponseSchema`,
+  `CreateSessionResponse`, `SESSION_POLL_INTERVAL_MS`, `MAX_POLL_ATTEMPTS`. They targeted
+  `/api/storefronts/{id}/sessions`, which no gateway serves (404), and creating a payment needs the
+  storefront API key, which must not be in the browser. The server-side create → reference flow
+  replaces them (README, *How a payment reaches your order*).
+
+### Fixed — permit allowlist holds the real digests (HP-5)
+
+`KNOWN_PERMIT_TOKENS` held one placeholder digest that matched no token. It now holds USDC
+Ethereum, DAI Ethereum and USDC Base, each re-derived from the chain (`docs/PERMIT_ALLOWLIST.md`,
+`scripts/verify-permit-domains.mjs`). ADR-0004 is unchanged: unknown domains still fall back /
+throw. The four `signPermit` tests that failed on the placeholder now target the USDC domain and
+exercise their own guards; the unknown-domain refusal has its own test.
+
+DAI's permit is not EIP-2612 (on-chain `PERMIT_TYPEHASH` =
+`Permit(holder,spender,nonce,expiry,allowed)`), so `detectPermitSupport` now reports a token with a
+non-EIP-2612 `PERMIT_TYPEHASH` as unsupported (`reason: 'non-eip2612-permit'`) and `permit: 'auto'`
+uses `approve()` for it, instead of signing a payload the token cannot redeem.
+
+### Not in this release
+
+- TRON (`./tron`) pay-ins are not reference-aware yet (contract + gateway are).
+- `WEB3SETTLE_PAYMENT_CONFIG_PUBKEY_PRIMARY` is still the all-zero placeholder, so the signed
+  payment-config never verifies against a real gateway and the modal / pay button cannot load a
+  chain list. Use `usePayment` with your own `ChainConfig` until the real key ships.
+
+## [0.6.0 toolchain, from #47] — Restore lint + build under ESLint 10 / Tailwind v4 (2026-09-24)
+
+Toolchain only (carried from merchant-sdk#47, which 0.6.0 supersedes). Every
 chain-cut guarantee is intact: `archive/solana/` is still unwired, the `exports`
 map is still `. / ./tron / ./headless / ./wc / ./styles.css`, and the 137 / 900–902
 drop guards still pass.
