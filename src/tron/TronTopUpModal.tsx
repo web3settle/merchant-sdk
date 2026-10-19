@@ -20,8 +20,8 @@ const STEP_TITLE: Record<ModalStep, (s: PaymentStatus) => string> = {
   result: (s) => (s === PaymentStatus.Success ? 'Complete' : 'Failed'),
 };
 
-export function TronTopUpModal({ isOpen, onClose, amount: initialAmount }: TopUpModalProps) {
-  const { config, wallet } = useTronWeb3SettleContext();
+export function TronTopUpModal({ isOpen, onClose, amount: initialAmount, userId }: TopUpModalProps) {
+  const { config, wallet, pipeline } = useTronWeb3SettleContext();
   const { paymentConfig, isLoading: configLoading } = useWeb3Settle();
   const { startPayment, status, txHash, error, reset } = useTronPayment();
 
@@ -35,6 +35,11 @@ export function TronTopUpModal({ isOpen, onClose, amount: initialAmount }: TopUp
   const [amount, setAmount] = useState<string>(initialAmount ? String(initialAmount) : '');
   const [selectedChainId, setSelectedChainId] = useState<number | null>(null);
   const [selectedToken, setSelectedToken] = useState<TokenSelection | null>(null);
+  // The merchant backend's createPayment step (paymentReference), mirrored from the EVM modal: its
+  // failure is shown on the review step; `requestId` becomes the onSuccess session id.
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [creatingPayment, setCreatingPayment] = useState(false);
+  const [requestId, setRequestId] = useState<string | null>(null);
 
   const selectedChain =
     paymentConfig?.chains.find((c) => c.chainId === selectedChainId) ?? null;
@@ -50,6 +55,8 @@ export function TronTopUpModal({ isOpen, onClose, amount: initialAmount }: TopUp
     setAmount(initialAmount ? String(initialAmount) : '');
     setSelectedChainId(null);
     setSelectedToken(null);
+    setCreateError(null);
+    setRequestId(null);
     reset();
   }, [isOpen, initialAmount, reset]);
 
@@ -69,7 +76,7 @@ export function TronTopUpModal({ isOpen, onClose, amount: initialAmount }: TopUp
   useEffect(() => {
     if (status !== PaymentStatus.Success || !txHash || !onSuccess) return;
     onSuccess({
-      id: '00000000-0000-0000-0000-000000000000',
+      id: requestId ?? '00000000-0000-0000-0000-000000000000',
       amount: Number(amount),
       status: 'confirmed',
       txHash,
@@ -78,7 +85,7 @@ export function TronTopUpModal({ isOpen, onClose, amount: initialAmount }: TopUp
         ? selectedChain?.nativeCurrency?.symbol
         : selectedTokenConfig?.symbol,
     });
-  }, [status, txHash, onSuccess, amount, selectedChain, isNativePayment, selectedTokenConfig]);
+  }, [status, txHash, onSuccess, amount, selectedChain, isNativePayment, selectedTokenConfig, requestId]);
 
   useEffect(() => {
     if (status !== PaymentStatus.Error || !error || !onError) return;
@@ -134,10 +141,61 @@ export function TronTopUpModal({ isOpen, onClose, amount: initialAmount }: TopUp
     setStep('review');
   }, [selectedChainId, selectedToken]);
 
-  const handleConfirm = useCallback(() => {
-    if (!selectedChain || !selectedToken) return;
-    void startPayment(Number(amount), selectedChain, selectedToken);
-  }, [amount, selectedChain, selectedToken, startPayment]);
+  const { createPayment, payInMode } = config;
+  const handleConfirm = useCallback(async () => {
+    if (!selectedChain || !selectedToken || creatingPayment) return;
+    setCreateError(null);
+    const usd = Number(amount);
+    // Attributed (the default): quote once, let the merchant backend create the payment for
+    // exactly that amount and hand back its paymentReference, then prompt the wallet for the same
+    // amount (atomicAmount) so what was requested and what is sent cannot drift apart.
+    let paymentReference: `0x${string}` | undefined;
+    let atomicAmount: string | undefined;
+    if (payInMode !== 'unattributed') {
+      if (!createPayment) {
+        setCreateError(
+          'Payments are not attributable: this storefront has no createPayment callback configured ' +
+            '(Web3SettleConfig.createPayment), so the payment would reach the merchant without an order.',
+        );
+        return;
+      }
+      setCreatingPayment(true);
+      try {
+        const raw = await pipeline.quoteAmount(usd, selectedChain, selectedToken);
+        const decimals = isNativePayment
+          ? (selectedChain.nativeCurrency?.decimals ?? 6)
+          : (selectedTokenConfig?.decimals ?? 6);
+        atomicAmount = raw.toString();
+        const created = await createPayment({
+          chainId: selectedChain.chainId,
+          chainName: selectedChain.name,
+          token: selectedToken,
+          tokenSymbol: isNativePayment
+            ? (selectedChain.nativeCurrency?.symbol ?? 'TRX')
+            : (selectedTokenConfig?.symbol ?? ''),
+          decimals,
+          atomicAmount,
+          amount: formatAtomic(raw, decimals),
+          amountUsd: usd,
+          userId,
+        });
+        paymentReference = created.paymentReference;
+        setRequestId(created.requestId ?? null);
+      } catch (err) {
+        setCreateError(err instanceof Error ? err.message : 'Could not create the payment');
+        return;
+      } finally {
+        setCreatingPayment(false);
+      }
+    }
+    void startPayment(usd, selectedChain, selectedToken, {
+      paymentReference,
+      mode: payInMode,
+      atomicAmount,
+      onTelemetry: config.onTelemetry,
+      contractVersion: config.contractVersion,
+    });
+  }, [amount, selectedChain, selectedToken, selectedTokenConfig, isNativePayment, creatingPayment, createPayment, payInMode, pipeline, startPayment, userId, config.onTelemetry, config.contractVersion]);
 
   const handleBack = useCallback(() => {
     switch (step) {
@@ -306,12 +364,18 @@ export function TronTopUpModal({ isOpen, onClose, amount: initialAmount }: TopUp
                       mono
                     />
                   </div>
+                  {createError && (
+                    <p role="alert" className="w3s-text-sm w3s-text-red-400">
+                      {createError}
+                    </p>
+                  )}
                   <button
                     type="button"
-                    onClick={handleConfirm}
-                    className="w3s-w-full w3s-rounded-xl w3s-bg-indigo-600 w3s-py-3 w3s-text-sm w3s-font-semibold w3s-text-white hover:w3s-bg-indigo-500 w3s-cursor-pointer"
+                    onClick={() => { void handleConfirm(); }}
+                    disabled={creatingPayment}
+                    className="w3s-w-full w3s-rounded-xl w3s-bg-indigo-600 w3s-py-3 w3s-text-sm w3s-font-semibold w3s-text-white hover:w3s-bg-indigo-500 disabled:w3s-opacity-40 w3s-cursor-pointer"
                   >
-                    Confirm Payment
+                    {creatingPayment ? 'Creating payment…' : 'Confirm Payment'}
                   </button>
                 </div>
               )}
@@ -355,6 +419,14 @@ export function TronTopUpModal({ isOpen, onClose, amount: initialAmount }: TopUp
       </div>
     </div>
   );
+}
+
+/** Whole-unit decimal text for a smallest-unit amount (no viem on the TRON subpath). */
+function formatAtomic(raw: bigint, decimals: number): string {
+  const s = raw.toString().padStart(decimals + 1, '0');
+  const whole = s.slice(0, s.length - decimals);
+  const frac = s.slice(s.length - decimals).replace(/0+$/, '');
+  return frac.length > 0 ? `${whole}.${frac}` : whole;
 }
 
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {

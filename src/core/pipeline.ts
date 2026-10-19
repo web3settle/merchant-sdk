@@ -1,4 +1,5 @@
 import type { ChainConfig, TokenSelection } from './types';
+import type { PaymentReference } from './payment-reference';
 
 /**
  * Common abstraction over the EVM / TRON payment pipelines.
@@ -43,8 +44,15 @@ export interface PaymentPipeline {
    */
   approve(chain: ChainConfig, token: TokenSelection, amount: bigint): Promise<string>;
 
-  /** Execute the actual pay-in tx. Returns the pay-in tx hash. */
-  execute(chain: ChainConfig, token: TokenSelection, amount: bigint): Promise<string>;
+  /**
+   * Execute the actual pay-in tx. Returns the pay-in tx hash.
+   *
+   * With `options.paymentReference` the pipeline sends the attributed `payIn*WithReference`
+   * (MerchantPayIn V3.2.3); without it, the plain unattributed `payIn*`. Deciding which — and
+   * refusing to prompt without a reference in attributed mode — is `resolveAttribution`'s job,
+   * done by the caller before anything reaches the wallet.
+   */
+  execute(chain: ChainConfig, token: TokenSelection, amount: bigint, options?: ExecuteOptions): Promise<string>;
 
   /**
    * Wait until the tx is confirmed at the chain's required depth.
@@ -58,6 +66,12 @@ export interface PaymentPipeline {
 }
 
 export type PaymentFamily = 'evm' | 'tron';
+
+/** Per-call options for {@link PaymentPipeline.execute}. */
+export interface ExecuteOptions {
+  /** Validated bytes32 from `POST /api/payment/create`; selects the `…WithReference` entry point. */
+  paymentReference?: PaymentReference;
+}
 
 export interface PaymentReceipt {
   success: boolean;
