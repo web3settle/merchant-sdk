@@ -14,6 +14,18 @@ been on EVM since 0.6.0 — `useTronPayment().startPayment` refuses to prompt Tr
 Version is the agent's call (reversible — one line in `package.json` + lockfile); nothing is published
 by this change, merging lets CI publish its usual `0.7.0-dev.<run>` prerelease to GitHub Packages.
 
+### Changed — runtime dependencies (2026-10-20, carried from Dependabot `main` PR #33)
+
+- `@noble/curves` 1.9.1 → **2.2.0** and `@noble/hashes` 1.8.0 → **2.2.0** (semver-major for the
+  libraries; no SDK API change). Noble 2.x requires explicit `.js` subpaths, so the imports are now
+  `@noble/curves/ed25519.js` and `@noble/hashes/sha2.js` (the `sha256` export; the `sha256` subpath
+  is gone in 2.x). `ed25519.verify(sig, msg, pub)` and `sha256(bytes)` behave the same — the Ed25519
+  payment-config verifier and the permit-digest tests pass unchanged. Tests use the renamed
+  `ed25519.utils.randomSecretKey()`.
+- `i18next` 26.3.1 → 26.3.6, `react-i18next` 17.0.8 → 17.0.11 (patch).
+- Runtime deps stay exact-version (`sdk-supplychain` gate). The dev-deps group (Dependabot #43) is
+  not carried here.
+
 ### Added — TRON (`@web3settle/merchant-sdk/tron`)
 
 - `MERCHANT_PAY_IN_ABI` gains `payInNativeWithReference(bytes32)`,
