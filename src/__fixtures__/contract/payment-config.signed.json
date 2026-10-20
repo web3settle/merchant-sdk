@@ -1,0 +1,36 @@
+{
+  "data": {
+    "storefrontId": "11111111-1111-4111-8111-111111111111",
+    "commissionBps": 250,
+    "chains": [
+      {
+        "chainId": 8453,
+        "name": "Base",
+        "contractAddress": "0x1111111111111111111111111111111111111111",
+        "tokens": [
+          {
+            "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+            "symbol": "USDC",
+            "decimals": 6
+          }
+        ],
+        "explorerUrl": "https://basescan.org",
+        "nativeCurrency": {
+          "name": "Ether",
+          "symbol": "ETH",
+          "decimals": 18
+        },
+        "confirmations": 12
+      }
+    ],
+    "contractAbiVersion": "V3.2.3",
+    "allowedContractAddresses": {
+      "8453": [
+        "0x1111111111111111111111111111111111111111"
+      ]
+    }
+  },
+  "signedAt": "2026-10-20T12:00:00.000Z",
+  "signature": "9157d6898bc03b2bc0866a10599368ce34ff7e2ba11c647984a53a061c1d7f85aed1de4d59106f7d18a1948b7ea2ad27a3f01428d443ccbe12c42c0e24da530b",
+  "publicKey": "5e6599de209011cc30b9a53476442797dead38d82d94a7e80f8abffb4ab8ad49"
+}

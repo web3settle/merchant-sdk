@@ -1,0 +1,15 @@
+{
+  "storefrontId": "11111111-1111-4111-8111-111111111111",
+  "network": "Base",
+  "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+  "tokenSymbol": "USDC",
+  "tokenDecimals": 6,
+  "amountUsd": 49.99,
+  "amountToken": "49990000",
+  "amountTokenDisplay": 49.99,
+  "priceUsd": 1.0001,
+  "source": "chainlink",
+  "feedAddress": "0x7e860098f58bbfc8648a4311b374b1d669a2bc6b",
+  "roundId": "18446744073709562345",
+  "observedAt": "2026-10-20T12:00:00+00:00"
+}
