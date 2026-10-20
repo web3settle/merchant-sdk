@@ -14,6 +14,15 @@ been on EVM since 0.6.0 — `useTronPayment().startPayment` refuses to prompt Tr
 Version is the agent's call (reversible — one line in `package.json` + lockfile); nothing is published
 by this change, merging lets CI publish its usual `0.7.0-dev.<run>` prerelease to GitHub Packages.
 
+### Security — dependency audit clean again (2026-10-20)
+
+- `follow-redirects` 1.16.0 → **1.16.1** (transitive via `tronweb` → `axios`; the `overrides` floor
+  moves to `^1.16.1`): GHSA-q3jh-wrc6-jgq8 / GHSA-8r9p-f939-6h3c (high — array-form headers bypass
+  cross-origin credential stripping; `sensitiveHeaders` regex escaping). Published after the last
+  `develop` run, so every open PR's `npm audit --audit-level=high` gate went red; this restores it.
+- `vite` dev dependency lockfile refresh to 8.3.4 (moderate, `launch-editor` GHSA-698v-4r3x-3vcv,
+  dev-only). `npm audit`: 0 vulnerabilities.
+
 ### Changed — runtime dependencies (2026-10-20, carried from Dependabot `main` PR #33)
 
 - `@noble/curves` 1.9.1 → **2.2.0** and `@noble/hashes` 1.8.0 → **2.2.0** (semver-major for the
