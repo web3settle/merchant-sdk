@@ -5,6 +5,36 @@ All notable changes to `@web3settle/merchant-sdk` will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — TRON pay-ins carry the payment reference (HP-25) (unpublished, 2026-10-19)
+
+**Breaking** (0.x minor) for the TRON subpath only: attribution is now the default on TRON as it has
+been on EVM since 0.6.0 — `useTronPayment().startPayment` refuses to prompt TronLink without a
+`paymentReference` unless `mode: 'unattributed'` is passed, and `TronTopUpModal` requires
+`Web3SettleConfig.createPayment` (or `payInMode: 'unattributed'`). Root `humanpending.md` HP-25.
+Version is the agent's call (reversible — one line in `package.json` + lockfile); nothing is published
+by this change, merging lets CI publish its usual `0.7.0-dev.<run>` prerelease to GitHub Packages.
+
+### Added — TRON (`@web3settle/merchant-sdk/tron`)
+
+- `MERCHANT_PAY_IN_ABI` gains `payInNativeWithReference(bytes32)`,
+  `payInTokenWithReference(address,uint256,bytes32)` and the `PaymentReference(bytes32 indexed)`
+  event; selectors (`0x817da306` / `0xa7d020be`) and the event topic pinned in tests against the
+  compiled TRON V3.2.3 artifact (identical to the EVM build — keccak of the signature).
+- `TronPaymentPipeline.execute(chain, token, amount, { paymentReference })` and the pure
+  `buildTronPayInCall({ token, amount, paymentReference? })` it and the tests share.
+- `useTronPayment().startPayment(…, { paymentReference, mode, atomicAmount })` — attribution decided
+  by `resolveAttribution` before anything reaches the wallet; `atomicAmount` sends a pre-quoted
+  amount instead of quoting again (so the created payment and the sent amount cannot drift).
+- `TronTopUpModal` asks `Web3SettleConfig.createPayment` for the reference at Pay time (quote → create
+  → prompt), shows its failure on the review step, and `onSuccess(session).id` is the `requestId`.
+- `estimateTronGas({ paymentReference })` estimates the `…WithReference` call (bytes32 parameter).
+- `PaymentPipeline.execute` takes an optional `ExecuteOptions` (exported from the root and `./tron`);
+  the EVM hook is unchanged. `./tron` re-exports `resolveAttribution` and the reference errors.
+
+### Changed
+
+- `PaymentPipeline.execute` signature gains an optional fourth parameter (source-compatible).
+
 ## [0.6.0] — Reference-aware pay-ins, real permit allowlist (unpublished, 2026-09-30)
 
 **Breaking** (0.x minor). This change publishes nothing; merging it to `develop` lets CI publish its usual `0.6.0-dev.<run>` prerelease to GitHub Packages (HP-3).

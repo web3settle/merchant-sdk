@@ -6,6 +6,8 @@ version: 2
 updates:
   - package-ecosystem: "npm"
     directory: "/"
+    # Development happens on `develop`; `main` only moves on a release promotion.
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"

@@ -86,8 +86,10 @@ gateway     ──POST payment.confirmed (X-Webhook-Signature: v1=…)──▶ 
    the request asked for — credit `min(amountPaid, amountInvoiced)` unless you handle overpayment.
 
 Needs a merchant contract at **MerchantPayIn V3.2.3** or later; a V3.2.2 contract has no
-`…WithReference` functions and the wallet's gas estimation fails. TRON pay-ins are not yet
-reference-aware in this SDK (the contract and gateway are) — follow-up.
+`…WithReference` functions and the wallet's gas estimation fails. The TRON subpath (0.7.0) follows
+the same contract: `useTronPayment().startPayment(…, { paymentReference })` sends
+`payInNativeWithReference` / `payInTokenWithReference`, `TronTopUpModal` asks your
+`Web3SettleConfig.createPayment` for the reference at Pay time, and attribution is the default there too.
 
 > **Known limitation (0.6.0).** `WEB3SETTLE_PAYMENT_CONFIG_PUBKEY_PRIMARY` is still the all-zero
 > development placeholder, so the signed `GET /payment-config` never verifies against a real gateway
@@ -225,7 +227,23 @@ export function App() {
 }
 ```
 
-`useTronPipeline()` gives you the `TronPaymentPipeline` for custom flows. The provider surfaces `{ address, connected, connecting, error }` via `useTronWeb3SettleContext().wallet`, and exposes `connect()` / `disconnect()` for manual control.
+Give the provider the same `createPayment` callback as the EVM one: the modal calls it with the
+exact chain / token / amount about to be sent, your server creates the gateway payment
+(`POST /api/payment/create`) and returns its `paymentReference`, and only then is TronLink prompted —
+with `payInNativeWithReference` / `payInTokenWithReference` (MerchantPayIn V3.2.3). Without a
+`createPayment` the modal refuses to pay; `payInMode: 'unattributed'` is the explicit opt-out.
+
+For a custom flow, `useTronPayment()` mirrors `usePayment()`:
+
+```ts
+const { startPayment } = useTronPayment();
+await startPayment(0, chain, 'native', {
+  paymentReference: instruction.paymentReference, // from your backend's POST /api/payment/create
+  atomicAmount: instruction.amountAtomic,         // sun / raw TRC-20 units; skips the SDK's own quote
+});
+```
+
+`useTronPipeline()` gives you the `TronPaymentPipeline` for custom flows (`execute(chain, token, amount, { paymentReference })`). The provider surfaces `{ address, connected, connecting, error }` via `useTronWeb3SettleContext().wallet`, and exposes `connect()` / `disconnect()` for manual control.
 
 ## Supporting multiple chains in the same app
 

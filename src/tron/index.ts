@@ -12,6 +12,18 @@ export {
 } from './TronProvider';
 export type { TronWalletState, TronWeb3SettleContextValue } from './TronProvider';
 export { useTronPayment } from './useTronPayment';
+export type { TronStartPaymentOpts } from './useTronPayment';
+export { buildTronPayInCall } from './pipeline';
+// Attribution (MerchantPayIn V3.2.3): the same policy and errors as the EVM root.
+export {
+  resolveAttribution,
+  isPaymentReference,
+  assertPaymentReference,
+  MissingPaymentReferenceError,
+  InvalidPaymentReferenceError,
+} from '../core/payment-reference';
+export type { PaymentReference, PayInMode, ResolvedAttribution } from '../core/payment-reference';
+export type { ExecuteOptions } from '../core/pipeline';
 export { TronPayButton } from './TronPayButton';
 export { TronTopUpModal } from './TronTopUpModal';
 export { TronWalletConnect } from './TronWalletConnect';
