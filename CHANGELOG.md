@@ -22,6 +22,16 @@ by this change, merging lets CI publish its usual `0.7.0-dev.<run>` prerelease t
   `develop` run, so every open PR's `npm audit --audit-level=high` gate went red; this restores it.
 - `vite` dev dependency lockfile refresh to 8.3.4 (moderate, `launch-editor` GHSA-698v-4r3x-3vcv,
   dev-only). `npm audit`: 0 vulnerabilities.
+### Tests — `./wc` and `./headless` on a verified payment config (2026-10-20)
+
+- `src/__tests__/verified-config-surfaces.test.tsx`: the headless controller and the
+  `<web3settle-pay-button>` element, each building its own API client, load a payment config that
+  went through the real Ed25519 verification — signed with a throwaway test key that is trusted
+  through the existing test seam (`vi.spyOn(config, 'WEB3SETTLE_PAYMENT_CONFIG_PUBKEY_PRIMARY', 'get')`,
+  as `api-client.test.ts` already does) — and refuse one signed by another key or tampered after
+  signing (`signature-invalid`, runner never called, `payment-error` raised). No production override
+  of the pinned key was added.
+
 ### Fixed — `TronTopUpModal` refuses a payment whose token decimals are unknown (2026-10-20)
 
 - The attributed path used to fall back to `6` decimals when the selected token was no longer in the
