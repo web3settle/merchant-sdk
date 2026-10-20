@@ -51,7 +51,7 @@ by this change, merging lets CI publish its usual `0.7.0-dev.<run>` prerelease t
   and the real Ed25519 verifier with the fixture's TEST-ONLY key as the trusted key (the verifier's
   `trustedKeysOverride` / `now` seam). **Open finding:** the fixture declares `contractAbiVersion:
   "V3.2.3"` while the backend controller serves `"V3.2"` and this SDK accepts `V3.1`/`V3.2` only
-  (fail closed) — two tests are red until one side is settled.
+  (fail closed); resolved in the merged backend fixtures (`"V3.2"`, commit 0cfeeb5).
 
 ### Fixed — `TronTopUpModal` refuses a payment whose token decimals are unknown (2026-10-20)
 

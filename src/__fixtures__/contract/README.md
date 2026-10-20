@@ -1,9 +1,9 @@
 <!--
   VENDORED COPY — do not edit here.
-  Source: web3settle/gateway-core-backend tests/fixtures/contract/ at commit 1bcc35357b8ae3622e71735175e36a0ade8de309
-  (PR #18 "test(contract): golden fixtures from the real serializers"). The backend's ContractFixtureTests
-  regenerates these files from the real serializers; when they change there, re-copy them here and let
-  src/__tests__/contract-fixtures.test.ts tell you what the SDK must follow.
+  Source: web3settle/gateway-core-backend tests/fixtures/contract/ at commit 0cfeeb532837bfba5c9306f78d9733f220d6b8b4
+  (PR #18 "test(contract): golden fixtures from the real serializers", merged to develop). The backend's
+  ContractFixtureTests regenerates these files from the real serializers; when they change there, re-copy
+  them here and let src/__tests__/contract-fixtures.test.ts tell you what the SDK must follow.
 -->
 
 # Contract fixtures (golden files)
@@ -19,7 +19,7 @@ reviewed as one.
 | `payment-config.signed.json` | `GET /api/storefronts/{id}/payment-config` response: `{ data, signedAt, signature, publicKey }` | SDK `verifyPaymentConfig`: Ed25519-verify `signedAt + canonicalJson(data)` against `test-ed25519.pub`; Zod-parse `data` with `PaymentConfigSchema` |
 | `test-ed25519.pub` | hex raw public key of the **TEST-ONLY** signing key (seed = SHA-256 of a public sentence in the test). Never a production key, never read from config or Vault. | pass as the trusted key when verifying the fixture above |
 | `quote.json` | `GET /api/storefronts/{id}/quote` response (`StorefrontQuoteResponse`) | SDK `QuoteSchema` parse; `amountToken` is the base-unit string |
-| `payment-confirmed.webhook.json` | `payment.confirmed` as WebhookRelay delivers it: `body` is the exact string that is signed and sent; `headers` are the four `X-Webhook-*` headers; `secret` is the test secret; `payload` is `body` parsed for readability | SDK `verifyWebhookSignature(body, headers, secret)`; demo webhook handler parses `payload` |
+| `payment-confirmed.webhook.json` | `payment.confirmed` as WebhookRelay delivers it: `body` is the exact string that is signed and sent; `headers` are the four `X-Webhook-*` headers; `secret` is the test secret; `payload` is `body` parsed for readability | recompute `v1=hex(HMAC-SHA256(secret, "{X-Webhook-Timestamp}.{body}"))` over the exact `body` string and compare with `X-Webhook-Signature`; demo webhook handler parses `payload` |
 
 Signature rules (both mirrored in the SDK):
 - payment-config: `signature = hex(Ed25519.sign(seed, utf8(signedAt + canonicalJson(data))))`, canonical JSON = keys sorted recursively, no whitespace, camelCase.

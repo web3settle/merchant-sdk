@@ -23,7 +23,7 @@
         "confirmations": 12
       }
     ],
-    "contractAbiVersion": "V3.2.3",
+    "contractAbiVersion": "V3.2",
     "allowedContractAddresses": {
       "8453": [
         "0x1111111111111111111111111111111111111111"
@@ -31,6 +31,6 @@
     }
   },
   "signedAt": "2026-10-20T12:00:00.000Z",
-  "signature": "9157d6898bc03b2bc0866a10599368ce34ff7e2ba11c647984a53a061c1d7f85aed1de4d59106f7d18a1948b7ea2ad27a3f01428d443ccbe12c42c0e24da530b",
+  "signature": "75d9dc546344b6fdc429baa15a03d45d03e355c659b930fc0a97d3b5d77cca50d85b153397b8f83dc335bf0eb4dba2458bb54aadfd5938ca457cb4c6ee95ef09",
   "publicKey": "5e6599de209011cc30b9a53476442797dead38d82d94a7e80f8abffb4ab8ad49"
 }
