@@ -16,7 +16,7 @@
  * `MerchantPaymentApi.Authentication.PaymentConfigSigner.Sign`:
  *     `signed_at_iso8601 + canonical_json(data)`.
  */
-import { ed25519 } from '@noble/curves/ed25519';
+import { ed25519 } from '@noble/curves/ed25519.js';
 import { canonicalJson } from './canonical-json';
 import {
   PAYMENT_CONFIG_MAX_AGE_MS,

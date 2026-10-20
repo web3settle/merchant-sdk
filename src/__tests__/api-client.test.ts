@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ed25519 } from '@noble/curves/ed25519';
+import { ed25519 } from '@noble/curves/ed25519.js';
 import { Web3SettleApiClient } from '../core/api-client';
 import { Web3SettleApiError } from '../core/types';
 import { canonicalJson } from '../core/canonical-json';
@@ -16,7 +16,7 @@ function bytesToHex(b: Uint8Array): string {
 }
 
 // Test signing key — paired with a temporary primary pubkey override below.
-const TEST_PRIV = ed25519.utils.randomPrivateKey();
+const TEST_PRIV = ed25519.utils.randomSecretKey();
 const TEST_PUB_HEX = bytesToHex(ed25519.getPublicKey(TEST_PRIV));
 
 interface PartialPaymentConfig {
@@ -174,7 +174,7 @@ describe('Web3SettleApiClient', () => {
     // Premortem F2 / Phase 2: signature provenance.
     it('rejects a payload whose signature does not verify', async () => {
       // Sign with a *different* key than the SDK's baked-in pubkey.
-      const otherPriv = ed25519.utils.randomPrivateKey();
+      const otherPriv = ed25519.utils.randomSecretKey();
       vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
         new Response(JSON.stringify(signEnvelope(defaultPayload(), { signWith: otherPriv })), {
           status: 200, headers: { 'Content-Type': 'application/json' },

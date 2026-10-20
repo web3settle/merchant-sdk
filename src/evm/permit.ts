@@ -30,7 +30,7 @@ import {
   isHex,
   parseSignature,
 } from 'viem';
-import { sha256 } from '@noble/hashes/sha256';
+import { sha256 } from '@noble/hashes/sha2.js';
 import { KNOWN_PERMIT_TOKENS } from '../core/config';
 
 /**
