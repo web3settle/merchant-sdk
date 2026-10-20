@@ -122,8 +122,7 @@ describe('signPermit refuses unknown tokens (premortem F3)', () => {
     };
     await expect(
       signPermit({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately
-        // partial wallet-client double; the point of this test is that signPermit
+        // Deliberately partial wallet-client double; the point of this test is that signPermit
         // rejects BEFORE touching the wallet at all.
         walletClient: fakeWalletClient as any,
         chainId: 1,

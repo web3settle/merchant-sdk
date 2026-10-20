@@ -31,7 +31,9 @@ export function TronTopUpModal({ isOpen, onClose, amount: initialAmount, userId 
   const titleId = useId();
   const amountInputId = useId();
 
-  const [step, setStep] = useState<ModalStep>('amount');
+  // The step the user navigated to. While a payment is in flight / settled the shown step is
+  // derived from the payment status instead (see `step` below).
+  const [flowStep, setStep] = useState<ModalStep>(initialAmount ? 'wallet' : 'amount');
   const [amount, setAmount] = useState<string>(initialAmount ? String(initialAmount) : '');
   const [selectedChainId, setSelectedChainId] = useState<number | null>(null);
   const [selectedToken, setSelectedToken] = useState<TokenSelection | null>(null);
@@ -49,28 +51,33 @@ export function TronTopUpModal({ isOpen, onClose, amount: initialAmount, userId 
       : null;
   const isNativePayment = selectedToken === NATIVE_TOKEN_SENTINEL;
 
-  useEffect(() => {
-    if (!isOpen) return;
-    setStep(initialAmount ? 'wallet' : 'amount');
-    setAmount(initialAmount ? String(initialAmount) : '');
-    setSelectedChainId(null);
-    setSelectedToken(null);
-    setCreateError(null);
-    setRequestId(null);
-    reset();
-  }, [isOpen, initialAmount, reset]);
-
-  useEffect(() => {
-    if (
-      status === PaymentStatus.Sending ||
-      status === PaymentStatus.Confirming ||
-      status === PaymentStatus.Approving
-    ) {
-      setStep('processing');
-    } else if (status === PaymentStatus.Success || status === PaymentStatus.Error) {
-      setStep('result');
+  // Start from a fresh form every time the modal is (re)opened or the merchant changes the fixed
+  // amount while it is open. Done during render (React's "adjust state when a prop changes"
+  // pattern) rather than in an effect, so the stale form never reaches the screen.
+  const [resetFor, setResetFor] = useState({ isOpen, initialAmount });
+  if (resetFor.isOpen !== isOpen || resetFor.initialAmount !== initialAmount) {
+    setResetFor({ isOpen, initialAmount });
+    if (isOpen) {
+      setStep(initialAmount ? 'wallet' : 'amount');
+      setAmount(initialAmount ? String(initialAmount) : '');
+      setSelectedChainId(null);
+      setSelectedToken(null);
+      setCreateError(null);
+      setRequestId(null);
+      reset();
     }
-  }, [status]);
+  }
+
+  // A payment in flight owns the screen, and a settled one shows its result; the user-navigated
+  // step is shown again once the status is reset (Try Again / reopen).
+  const step: ModalStep =
+    status === PaymentStatus.Sending ||
+    status === PaymentStatus.Confirming ||
+    status === PaymentStatus.Approving
+      ? 'processing'
+      : status === PaymentStatus.Success || status === PaymentStatus.Error
+        ? 'result'
+        : flowStep;
 
   const { onSuccess, onError } = config;
   useEffect(() => {
@@ -159,12 +166,24 @@ export function TronTopUpModal({ isOpen, onClose, amount: initialAmount, userId 
         );
         return;
       }
+      // The token's decimals turn the quoted smallest-unit amount into the amount the merchant
+      // invoices. They are unknown when the selected token is no longer in the storefront's
+      // payment config (e.g. it was removed while the modal was open) or the chain declares no
+      // native currency. Guessing (the former `?? 6` fallback) would invoice the wrong amount, so
+      // refuse before quoting, before the merchant backend and before the wallet.
+      const decimals = isNativePayment
+        ? selectedChain.nativeCurrency?.decimals
+        : selectedTokenConfig?.decimals;
+      if (decimals === undefined) {
+        setCreateError(
+          'Cannot determine the decimals of the selected token: it is no longer part of this ' +
+            "storefront's payment configuration. Go back and choose a token again.",
+        );
+        return;
+      }
       setCreatingPayment(true);
       try {
         const raw = await pipeline.quoteAmount(usd, selectedChain, selectedToken);
-        const decimals = isNativePayment
-          ? (selectedChain.nativeCurrency?.decimals ?? 6)
-          : (selectedTokenConfig?.decimals ?? 6);
         atomicAmount = raw.toString();
         const created = await createPayment({
           chainId: selectedChain.chainId,

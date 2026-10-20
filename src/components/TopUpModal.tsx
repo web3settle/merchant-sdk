@@ -68,6 +68,17 @@ function pickDefaultToken(options: TokenOption[]): TokenOption | null {
   return firstErc20 ?? options[0] ?? null;
 }
 
+/** `Object.is` over two dependency tuples — pairs an async result with the inputs it was computed for. */
+function sameInputs(a: readonly unknown[], b: readonly unknown[]): boolean {
+  return a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
+}
+
+/** An async result remembered together with the inputs it answers; stale when the inputs moved on. */
+interface ForInputs<T> {
+  inputs: readonly unknown[];
+  value: T;
+}
+
 function CloseIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -126,9 +137,12 @@ export function Web3SettleTopUpModal({
   // `enteredAmount` only matters when the merchant didn't fix `amount` via prop. The effective
   // amount used everywhere downstream (quote, payment) is the merge of fixedAmount + entered.
   const [enteredAmount, setEnteredAmount] = useState<string>('');
-  const [selectedChainId, setSelectedChainId] = useState<number | null>(null);
-  const [selectedToken, setSelectedToken] = useState<string | null>(null);
-  const [tokenBalance, setTokenBalance] = useState<string | null>(null);
+  // `null` = nothing picked explicitly; the shown chain/token are derived below (first EVM chain,
+  // most useful token) so the modal opens already pointed at something.
+  const [pickedChainId, setSelectedChainId] = useState<number | null>(null);
+  const [pickedToken, setSelectedToken] = useState<string | null>(null);
+  const [tokenBalanceFor, setTokenBalanceFor] = useState<ForInputs<string | null> | null>(null);
+  const [gasEstimateFor, setGasEstimateFor] = useState<ForInputs<GasEstimate | null> | null>(null);
   const [showConnectorList, setShowConnectorList] = useState(false);
   // The merchant backend's createPayment step (paymentReference). Its failure is shown like a
   // payment failure; `requestId` becomes the onSuccess session id.
@@ -138,57 +152,68 @@ export function Web3SettleTopUpModal({
 
   // Reset on open so opening the modal twice in a row doesn't keep stale state from the first
   // round (esp. payment status — closing on success and re-opening should give a fresh form).
-  useEffect(() => {
-    if (!isOpen) return;
-    setEnteredAmount('');
-    setSelectedChainId(null);
-    setSelectedToken(null);
-    setTokenBalance(null);
-    setShowConnectorList(false);
-    setCreateError(null);
-    setCreatingPayment(false);
-    setRequestId(null);
-    resetPayment();
-  }, [isOpen, resetPayment]);
+  // Done during render (React's "adjust state when a prop changes" pattern) rather than in an
+  // effect, so the stale form never reaches the screen.
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (wasOpen !== isOpen) {
+    setWasOpen(isOpen);
+    if (isOpen) {
+      setEnteredAmount('');
+      setSelectedChainId(null);
+      setSelectedToken(null);
+      setTokenBalanceFor(null);
+      setGasEstimateFor(null);
+      setShowConnectorList(false);
+      setCreateError(null);
+      setCreatingPayment(false);
+      setRequestId(null);
+      resetPayment();
+    }
+  }
 
   // ── Derived ─────────────────────────────────────────────────────────────
   const evmChains = useMemo(
     () => paymentConfig?.chains.filter((c) => SUPPORTED_EVM_CHAIN_IDS.has(c.chainId)) ?? [],
     [paymentConfig],
   );
+  // Auto-pick the first EVM chain so the user opens the modal already pointed at something.
+  const selectedChainId = pickedChainId ?? evmChains[0]?.chainId ?? null;
   const selectedChain = evmChains.find((c) => c.chainId === selectedChainId) ?? null;
   const tokenOptions = useMemo(
     () => (selectedChain ? buildTokenOptions(selectedChain) : []),
     [selectedChain],
   );
+  // Auto-pick the most useful token (USDT > USDC > first ERC20 > native) so the user only has
+  // to override if they want a different one; a pick that the current chain doesn't offer falls
+  // back to that chain's default.
+  const selectedToken =
+    pickedToken !== null && tokenOptions.some((o) => o.value === pickedToken)
+      ? pickedToken
+      : (pickDefaultToken(tokenOptions)?.value ?? null);
   const selectedTokenOption = tokenOptions.find((t) => t.value === selectedToken) ?? null;
+
+  // Switching chains re-resolves the token the same way the derivation above does, so the
+  // remembered pick is what the user would see (a pick the new chain doesn't offer is replaced by
+  // the new chain's default and does not resurface on a later switch back).
+  const handleChainSelect = useCallback(
+    (chainId: number) => {
+      setSelectedChainId(chainId);
+      const chain = evmChains.find((c) => c.chainId === chainId);
+      const options = chain ? buildTokenOptions(chain) : [];
+      setSelectedToken((prev) =>
+        prev !== null && options.some((o) => o.value === prev)
+          ? prev
+          : (pickDefaultToken(options)?.value ?? null),
+      );
+    },
+    [evmChains],
+  );
 
   const effectiveAmount = useMemo(() => {
     if (typeof fixedAmount === 'number' && fixedAmount > 0) return fixedAmount;
     const parsed = parseFloat(enteredAmount);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }, [fixedAmount, enteredAmount]);
-
-  // Auto-pick the first EVM chain so the user opens the modal already pointed at something.
-  useEffect(() => {
-    if (selectedChainId !== null) return;
-    const first = evmChains[0];
-    if (!first) return;
-    setSelectedChainId(first.chainId);
-  }, [evmChains, selectedChainId]);
-
-  // Auto-pick the most useful token (USDT > USDC > first ERC20 > native) so the user only has
-  // to override if they want a different one. Re-runs when the chain changes.
-  useEffect(() => {
-    if (tokenOptions.length === 0) {
-      setSelectedToken(null);
-      return;
-    }
-    const stillValid = selectedToken && tokenOptions.some((o) => o.value === selectedToken);
-    if (stillValid) return;
-    const def = pickDefaultToken(tokenOptions);
-    setSelectedToken(def?.value ?? null);
-  }, [tokenOptions, selectedToken]);
 
   // ── Quote ────────────────────────────────────────────────────────────────
   const quoteToken = selectedToken === NATIVE_TOKEN_SENTINEL ? 'native' : selectedToken;
@@ -210,11 +235,16 @@ export function Web3SettleTopUpModal({
   // ── Gas estimate (item 14.1) ────────────────────────────────────────────
   // Best-effort: a failure here just hides the "≈ $X fee" badge — never blocks
   // the pay flow.
-  const [gasEstimate, setGasEstimate] = useState<GasEstimate | null>(null);
+  // The estimate is remembered with the inputs it was computed for (state declared with the rest
+  // of the modal state above), so a change of wallet, chain, token or quote hides it (shows
+  // nothing) until the new estimate lands — never a stale fee.
+  const gasInputs = [publicClient, wallet.address, selectedChain, selectedTokenOption, quote];
+  const gasEstimate =
+    gasEstimateFor && sameInputs(gasEstimateFor.inputs, gasInputs) ? gasEstimateFor.value : null;
   useEffect(() => {
     let cancelled = false;
-    setGasEstimate(null);
     const account = wallet.address;
+    const inputs = [publicClient, account, selectedChain, selectedTokenOption, quote];
     if (
       !publicClient ||
       !account ||
@@ -245,19 +275,24 @@ export function Web3SettleTopUpModal({
           // the modal renders "≈ network fee" without a $ figure.
           selectedTokenOption.isNative ? { priceUsd: quote.priceUsd } : {},
         );
-        if (!cancelled) setGasEstimate(est);
+        if (!cancelled) setGasEstimateFor({ inputs, value: est });
       } catch {
-        if (!cancelled) setGasEstimate(null);
+        if (!cancelled) setGasEstimateFor({ inputs, value: null });
       }
     };
     void run();
     return () => { cancelled = true; };
   }, [publicClient, wallet.address, selectedChain, selectedTokenOption, quote]);
 
+  // Same pairing as the gas estimate: a balance is only shown for the wallet/chain/token it was
+  // read for, so switching any of them shows "—" until the new balance lands.
+  const balanceInputs = [wallet.address, publicClient, selectedChain, selectedTokenOption];
+  const tokenBalance =
+    tokenBalanceFor && sameInputs(tokenBalanceFor.inputs, balanceInputs) ? tokenBalanceFor.value : null;
   useEffect(() => {
     let cancelled = false;
-    setTokenBalance(null);
     const account = wallet.address;
+    const inputs = [account, publicClient, selectedChain, selectedTokenOption];
     if (!account || !publicClient || !selectedChain || !selectedTokenOption) return;
 
     const loadBalance = async () => {
@@ -265,7 +300,7 @@ export function Web3SettleTopUpModal({
         if (selectedTokenOption.isNative) {
           const bal = await publicClient.getBalance({ address: account });
           if (!cancelled) {
-            setTokenBalance(Number(formatUnits(bal, selectedTokenOption.decimals)).toFixed(4));
+            setTokenBalanceFor({ inputs, value: Number(formatUnits(bal, selectedTokenOption.decimals)).toFixed(4) });
           }
         } else {
           const bal = await getTokenBalance(
@@ -274,11 +309,11 @@ export function Web3SettleTopUpModal({
             account,
           );
           if (!cancelled) {
-            setTokenBalance(Number(formatUnits(bal, selectedTokenOption.decimals)).toFixed(4));
+            setTokenBalanceFor({ inputs, value: Number(formatUnits(bal, selectedTokenOption.decimals)).toFixed(4) });
           }
         }
       } catch {
-        if (!cancelled) setTokenBalance(null);
+        if (!cancelled) setTokenBalanceFor({ inputs, value: null });
       }
     };
     void loadBalance();
@@ -535,7 +570,7 @@ export function Web3SettleTopUpModal({
                   <ChainPicker
                     chains={evmChains}
                     selectedChainId={selectedChainId}
-                    onSelect={setSelectedChainId}
+                    onSelect={handleChainSelect}
                   />
                   <TokenPicker
                     options={tokenOptions}
