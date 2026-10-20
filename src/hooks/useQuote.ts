@@ -32,6 +32,13 @@ interface UseQuoteOptions {
   enabled?: boolean;
 }
 
+/** Outcome of one quote request, keyed by the inputs (and refresh tick) it was made for. */
+interface QuoteResult {
+  key: string;
+  quote: QuoteResponse | null;
+  error: string | null;
+}
+
 interface UseQuoteResult {
   quote: QuoteResponse | null;
   isLoading: boolean;
@@ -58,9 +65,6 @@ export function useQuote(
   const { refreshIntervalMs = 30_000, enabled = true } = options;
   const { config } = useWeb3SettleContext();
 
-  const [quote, setQuote] = useState<QuoteResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   // Bumping `tick` via setTick() is how both auto-refresh ticks AND manual refresh() trigger a
   // fresh fetch — including it in the effect deps gives us a single fetch path.
   const [tick, setTick] = useState(0);
@@ -79,39 +83,51 @@ export function useQuote(
 
   const refresh = () => setTick((t) => t + 1);
 
+  // The outcome of the latest fetch, remembered with the request it answered. Everything the hook
+  // returns is derived from it: a request whose key differs from the current one is in flight
+  // (`isLoading`), its error is no longer shown, but its quote stays visible until the fresh one
+  // lands so the displayed price doesn't flicker on every refresh.
+  const requestKey = ready
+    ? `${config.apiBaseUrl}|${config.storefrontId}|${network}|${token}|${amountUsd}|${tick}`
+    : null;
+  const [result, setResult] = useState<QuoteResult | null>(null);
+
+  // While the inputs are not ready there is no quote and no error to show: cleared the moment the
+  // hook stops being ready (during render — React's "adjust state when a prop changes" pattern).
+  const [wasReady, setWasReady] = useState(ready);
+  if (wasReady !== ready) {
+    setWasReady(ready);
+    if (!ready) setResult(null);
+  }
+
+  const quote = result?.quote ?? null;
+  const error = result !== null && result.key === requestKey ? result.error : null;
+  const isLoading = requestKey !== null && result?.key !== requestKey;
+
   useEffect(() => {
-    if (!ready || network === null || token === null || amountUsd === null) {
-      setQuote(null);
-      setError(null);
-      return;
-    }
+    if (requestKey === null || network === null || token === null || amountUsd === null) return;
 
     const controller = new AbortController();
     const client = new Web3SettleApiClient(config.apiBaseUrl, config.storefrontId);
-    setIsLoading(true);
-    setError(null);
 
     client
       .fetchQuote(network, token, amountUsd, controller.signal)
       .then((q) => {
         if (controller.signal.aborted) return;
         failureCountRef.current = 0; // success clears the backoff streak
-        setQuote(q);
+        setResult({ key: requestKey, quote: q, error: null });
       })
       .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
         if (err instanceof DOMException && err.name === 'AbortError') return;
         failureCountRef.current += 1; // grows the backoff streak
-        setError(err instanceof Error ? err.message : 'Quote unavailable');
-        setQuote(null);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setIsLoading(false);
+        setResult({ key: requestKey, quote: null, error: err instanceof Error ? err.message : 'Quote unavailable' });
       });
 
     return () => {
       controller.abort();
     };
-  }, [ready, network, token, amountUsd, config.apiBaseUrl, config.storefrontId, tick]);
+  }, [requestKey, network, token, amountUsd, config.apiBaseUrl, config.storefrontId]);
 
   // Auto-refresh: schedule a tick bump on the requested cadence. Decoupled from the fetch
   // effect so re-fetches caused by input changes don't reset the auto-refresh timer.

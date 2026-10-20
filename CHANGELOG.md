@@ -22,6 +22,24 @@ by this change, merging lets CI publish its usual `0.7.0-dev.<run>` prerelease t
   `develop` run, so every open PR's `npm audit --audit-level=high` gate went red; this restores it.
 - `vite` dev dependency lockfile refresh to 8.3.4 (moderate, `launch-editor` GHSA-698v-4r3x-3vcv,
   dev-only). `npm audit`: 0 vulnerabilities.
+### Fixed — `TronTopUpModal` refuses a payment whose token decimals are unknown (2026-10-20)
+
+- The attributed path used to fall back to `6` decimals when the selected token was no longer in the
+  storefront's payment config (or the chain declared no native currency) and would have invoiced the
+  merchant for a wrong amount. It now shows an error on the review step and makes no quote, no
+  `createPayment` and no `payInToken*` / `payInNative*` call. Pinned by
+  `src/__tests__/tron-topup-modal.test.tsx`.
+
+### Changed — no state is set synchronously inside effects (2026-10-20)
+
+- `TopUpModal`, `TronTopUpModal` and `useQuote` reset on open / derive the shown step, the
+  pre-selected chain and token, and the "stale result hidden until the fresh one lands" rule for the
+  gas estimate, token balance and quote during render instead of in effects (React's "adjust state
+  when a prop changes" pattern). No observable behaviour change; the stale frame between open and
+  reset is gone. Characterised by the new `topup-modal`, `tron-topup-modal` and `use-quote` tests.
+  9 of the 10 `react-hooks/set-state-in-effect` warnings are cleared; the remaining one
+  (`TronProvider` picking up an already-unlocked TronLink at mount) is kept on purpose — reading
+  `window.tronWeb` during the first render would desync hydration for SSR hosts.
 
 ### Changed — runtime dependencies (2026-10-20, carried from Dependabot `main` PR #33)
 
