@@ -14,6 +14,19 @@ been on EVM since 0.6.0 — `useTronPayment().startPayment` refuses to prompt Tr
 Version is the agent's call (reversible — one line in `package.json` + lockfile); nothing is published
 by this change, merging lets CI publish its usual `0.7.0-dev.<run>` prerelease to GitHub Packages.
 
+### CI — SHA-pinned actions, Dependabot for actions, changelog gate (2026-10-20)
+
+- Every `uses:` in `.github/workflows/` (ci, security, sdk-supplychain) is pinned to the full commit SHA
+  of the release the floating tag resolved to on 2026-10-20, with a `# vX.Y.Z` trailing comment
+  (`actions/checkout` v4.4.0, `actions/setup-node` v4.4.0, `actions/upload-artifact` v4.6.2,
+  `actions/dependency-review-action` v4.9.0, `github/codeql-action` v3.39.0,
+  `trufflesecurity/trufflehog` `@main` → v3.99.3). Same versions as before; a tag can move, a SHA cannot.
+- `.github/dependabot.yml`: weekly `github-actions` ecosystem against `develop` next to the existing
+  `npm` block, so the pins are bumped by PR.
+- `.github/workflows/changelog-check.yml` (new): PRs into `develop` fail unless `CHANGELOG.md` is among
+  the changed files; the `no-changelog` label is the documented escape hatch. No library change — the
+  `0.7.0-dev.<run>` prerelease this merge publishes is identical in content.
+
 ### Security — dependency audit clean again (2026-10-20)
 
 - `follow-redirects` 1.16.0 → **1.16.1** (transitive via `tronweb` → `axios`; the `overrides` floor
