@@ -44,6 +44,14 @@ by this change, merging lets CI publish its usual `0.7.0-dev.<run>` prerelease t
   as `api-client.test.ts` already does) — and refuse one signed by another key or tampered after
   signing (`signature-invalid`, runner never called, `payment-error` raised). No production override
   of the pinned key was added.
+### Tests — gateway contract fixtures (C1, SDK half; 2026-10-20)
+
+- `src/__fixtures__/contract/` vendors gateway-core-backend `tests/fixtures/contract/` (source commit in
+  the README there) and `src/__tests__/contract-fixtures.test.ts` runs them through the real Zod schemas
+  and the real Ed25519 verifier with the fixture's TEST-ONLY key as the trusted key (the verifier's
+  `trustedKeysOverride` / `now` seam). **Open finding:** the fixture declares `contractAbiVersion:
+  "V3.2.3"` while the backend controller serves `"V3.2"` and this SDK accepts `V3.1`/`V3.2` only
+  (fail closed); resolved in the merged backend fixtures (`"V3.2"`, commit 0cfeeb5).
 
 ### Fixed — `TronTopUpModal` refuses a payment whose token decimals are unknown (2026-10-20)
 
