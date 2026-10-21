@@ -5,7 +5,7 @@ All notable changes to `@web3settle/merchant-sdk` will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] — TRON pay-ins carry the payment reference (HP-25) (unpublished, 2026-10-19)
+## [0.7.0] — TRON pay-ins carry the payment reference (HP-25) (2026-10-19; published to GitHub Packages 2026-10-21 by the develop → main promotion, #50)
 
 **Breaking** (0.x minor) for the TRON subpath only: attribution is now the default on TRON as it has
 been on EVM since 0.6.0 — `useTronPayment().startPayment` refuses to prompt TronLink without a
