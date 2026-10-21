@@ -8,7 +8,7 @@
 
 `@web3settle/merchant-sdk` is a **React + framework-agnostic TypeScript SDK** a
 merchant embeds in their storefront to accept **non-custodial crypto payments**
-across **EVM, Solana, and TRON**. It is published to a package registry and
+across **EVM (non-Polygon) and TRON**. It is published to a package registry and
 **runs in the end customer's browser**. Its core job: take a USD amount, obtain a
 verified payment-config and quote from the Web3Settle gateway, build the chain-
 specific transaction, and drive the user's wallet to sign and broadcast a
@@ -22,14 +22,18 @@ central to its architecture as the features it offers.
 
 ## Entry points / subpath structure
 
+> **Chain cut (2026-09-24).** The `./solana` subpath was removed and its sources
+> quarantined under [`archive/solana/`](./archive/solana/README.md) (decision
+> D2); Polygon (chainId 137) was dropped permanently (decision D1). Everything
+> below describes the post-cut package.
+
 The package ships **multiple entry points** (`exports` in `package.json`), so a
-consumer pulls in only the chain and rendering style they use. Solana and TRON
-peer deps are **optional** — an EVM-only consumer never bundles them.
+consumer pulls in only the chain and rendering style they use. The TRON peer dep
+is **optional** — an EVM-only consumer never bundles it.
 
 | Subpath | Source entry | Purpose |
 |---|---|---|
 | `.` (root) | [`src/index.ts`](./src/index.ts) | EVM React components + hooks, core (api-client, contract, price-feed, telemetry, confirmation policy, types, config), permit utils, i18n |
-| `./solana` | [`src/solana/index.ts`](./src/solana/index.ts) | Solana provider, hooks, components, pipeline, PDA + instruction builders (optional `@solana/*` peers) |
 | `./tron` | [`src/tron/index.ts`](./src/tron/index.ts) | TRON provider, hooks, components, pipeline; detects `window.tronWeb` at runtime (TronLink) |
 | `./headless` | [`src/headless/index.ts`](./src/headless/index.ts) | Framework-agnostic controllers (`createPayButtonController`, …) — no React render; for Vue/Svelte/vanilla |
 | `./wc` | [`src/wc/index.ts`](./src/wc/index.ts) | Native `<web3settle-pay-button>` Web Component (no Lit), reuses the headless controller |
@@ -38,8 +42,8 @@ peer deps are **optional** — an EVM-only consumer never bundles them.
 Layering (no cycles; UI layers depend inward on core):
 
 ```
-React components (.)   Solana (./solana)   TRON (./tron)
-        \                   |                  /
+React components (.)          TRON (./tron)
+        \                         /
    Web Component (./wc) → headless controllers (./headless)
                       \         |         /
                         core/  (api-client, contract, pipeline interface,
@@ -92,20 +96,19 @@ payments rather than accepting unverified ones.
 ## Multi-chain adapters
 
 A single `PaymentPipeline` interface ([`src/core/pipeline.ts`](./src/core/pipeline.ts))
-abstracts the three chain stacks so merchant UIs never branch on `chainId`:
+abstracts both chain stacks so merchant UIs never branch on `chainId`:
 
 | Family | Stack | Approval step | Amount unit | Tx-hash shape |
 |---|---|---|---|---|
 | EVM | wagmi + viem | yes (non-native, when allowance < amount) | wei | hex |
-| Solana | `@solana/web3.js`; hand-rolled instructions + PDA derivation ([`src/solana/pda.ts`](./src/solana/pda.ts)) | **no** (transfer signed inline) | lamports / SPL raw | base58 |
 | TRON | runtime `window.tronWeb` | yes (non-native) | sun | base58 |
 
 Cross-chain **finality** is unified by `ConfirmationPolicy`
 ([`src/core/ConfirmationPolicy.ts`](./src/core/ConfirmationPolicy.ts)): EVM block
-confirmations, Solana commitment levels, TRON confirmed-tx — one "is this safe
-yet?" API. On Solana, per-merchant state is a set of **PDAs** (`merchant_config`,
-`sol_vault`, `token_totals`) whose seeds mirror the Anchor program 1:1 — the
-analogue of the EVM/TRON per-merchant contract address.
+confirmations and TRON confirmed-tx behind one "is this safe yet?" API. Both
+families count block depth, so the interface is now purely numeric — the
+commitment-level vocabulary went away with Solana. Adding a new **EVM** chain is
+a registry entry, not an interface change.
 
 ## Build & publish
 
@@ -120,11 +123,11 @@ analogue of the EVM/TRON per-merchant contract address.
   mode** ([`vite.config.ts`](./vite.config.ts)) with `@vitejs/plugin-react`,
   rollup multi-entry `lib`, and **`vite-plugin-dts`** (`rollupTypes`) for bundled
   `.d.ts`. Emits dual **ESM (`.js`) + CJS (`.cjs`)** plus a single `styles.css`.
-  React / wagmi / viem / `@solana/*` / `tronweb` are kept **external** (consumers
-  supply them).
+  React / wagmi / viem / `tronweb` are kept **external** (consumers supply
+  them).
 - **Test:** **Vitest** (`npm test`, jsdom) — see `src/__tests__/` (api-client,
   payment-config-verifier, permit + permit-allowlist, telemetry, per-chain gas /
-  pipeline / PDA, confirmation policy).
+  pipeline, confirmation policy incl. the chain-cut drop guards).
 - **Lint/type:** ESLint (flat config) + `tsc --noEmit` strict.
 - **Publish integrity** — `prepublishOnly` runs `npm ci --ignore-scripts` +
   typecheck + lint + test + build; `publishConfig` sets **`provenance: true`**.
@@ -156,16 +159,16 @@ analogue of the EVM/TRON per-merchant contract address.
  │  │           allow-list      (ADR-0003)                             │ │
  │  │        │ verified contractAddress + amount                       │ │
  │  │        ▼                                                          │ │
- │  │  PaymentPipeline (EVM | Solana | TRON adapter)                   │ │
+ │  │  PaymentPipeline (EVM | TRON adapter)                            │ │
  │  │   • permit? → KNOWN_PERMIT_TOKENS gate + deadline/owner/chain    │ │
  │  │              checks (ADR-0004), else approve()                   │ │
  │  │   • build calldata / instruction / trigger                      │ │
  │  │        │                                                          │ │
  │  │        ▼ request signature                                       │ │
- │  │  USER WALLET (MetaMask / Phantom / TronLink) ── signs ───────────┼─┼──► BLOCKCHAIN
+ │  │  USER WALLET (MetaMask / TronLink) ── signs ─────────────────────┼─┼──► BLOCKCHAIN
  │  │        │                                                          │ │     funds land DIRECTLY in the
  │  │        ▼ broadcast tx                                            │ │     merchant's MerchantPayIn
- │  │  ConfirmationPolicy: poll to required finality                  │ │     contract/PDA (non-custodial)
+ │  │  ConfirmationPolicy: poll to required finality                  │ │     contract (non-custodial)
  │  │        │                                                          │ │
  │  │  telemetry breadcrumb (opt-in, redacted, salted digest,         │ │
  │  │   NO network from SDK) ──► merchant's own analytics (ADR-0005)  │ │

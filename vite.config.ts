@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 /**
  * Roots of packages that MUST stay external — consumers supply them, the SDK
  * never bundles them. Each regex also matches submodule paths (wagmi/chains,
- * @solana/wallet-adapter-react/*, …).
+ * @tanstack/react-query/*, …).
  */
 const EXTERNAL_ROOTS = [
   'react',
@@ -16,11 +16,7 @@ const EXTERNAL_ROOTS = [
   '@wagmi/core',
   '@wagmi/connectors',
   '@tanstack/react-query',
-  // Solana — all optional peers, bundled only on consumers who use /solana.
-  '@solana/web3.js',
-  '@solana/wallet-adapter-base',
-  '@solana/wallet-adapter-react',
-  // TRON
+  // TRON — optional peer, bundled only on consumers who use /tron.
   'tronweb',
 ];
 
@@ -49,7 +45,6 @@ export default defineConfig({
     lib: {
       entry: {
         index: resolve(__dirname, 'src/index.ts'),
-        solana: resolve(__dirname, 'src/solana/index.ts'),
         tron: resolve(__dirname, 'src/tron/index.ts'),
         headless: resolve(__dirname, 'src/headless/index.ts'),
         wc: resolve(__dirname, 'src/wc/index.ts'),

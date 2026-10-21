@@ -1,39 +1,34 @@
 /**
  * EVM-locked variant of {@link ConfirmationPolicy}. Convenience wrapper for
  * EVM-only consumers — if you `import { evmConfirmationPolicy } from
- * '@web3settle/merchant-sdk'` you do NOT pull in the Solana / TRON families.
+ * '@web3settle/merchant-sdk'` you do NOT pull in the TRON family.
  *
- * The default policy already covers EVM correctly; this wrapper just
- * narrows the family check so an EVM-only storefront can fail loudly when
- * given a Solana chainId by mistake (which would otherwise resolve to a
- * conservative 12-confirmation default and silently work).
+ * The default policy already covers EVM correctly; this wrapper just narrows
+ * the family check so an EVM-only storefront can fail loudly when given a TRON
+ * chainId by mistake (which would otherwise resolve to a conservative
+ * 12-confirmation default and silently work).
  */
 
 import {
   DefaultConfirmationPolicy,
+  type ChainFamily,
   type ConfirmationPolicy,
   type ConfirmationProgress,
-  type SolanaCommitmentLevel,
 } from '../core/ConfirmationPolicy';
 import type { ChainConfig } from '../core/types';
 
-const SUPPORTED_EVM_CHAIN_IDS = new Set<number>([1, 137, 8453]);
+// Chain cut 2026-09-24: Polygon (137) dropped permanently (decision D1).
+const SUPPORTED_EVM_CHAIN_IDS = new Set<number>([1, 8453]);
 
 class EvmConfirmationPolicy implements ConfirmationPolicy {
   private readonly inner = new DefaultConfirmationPolicy();
 
-  family(chainId: number): 'evm' | 'tron' | 'solana' {
+  family(chainId: number): ChainFamily {
     return this.inner.family(chainId);
   }
 
   requiredConfirmations(chainId: number): number {
     return this.inner.requiredConfirmations(chainId);
-  }
-
-  commitmentLevel(chainId: number): SolanaCommitmentLevel | null {
-    // EVM-locked policy never returns a commitment level.
-    void chainId;
-    return null;
   }
 
   estimatedSecondsToFinality(chainId: number): number {

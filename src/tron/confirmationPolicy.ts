@@ -13,26 +13,21 @@
 
 import {
   DefaultConfirmationPolicy,
+  type ChainFamily,
   type ConfirmationPolicy,
   type ConfirmationProgress,
-  type SolanaCommitmentLevel,
 } from '../core/ConfirmationPolicy';
 import type { ChainConfig } from '../core/types';
 
 class TronConfirmationPolicy implements ConfirmationPolicy {
   private readonly inner = new DefaultConfirmationPolicy();
 
-  family(chainId: number): 'evm' | 'tron' | 'solana' {
+  family(chainId: number): ChainFamily {
     return this.inner.family(chainId);
   }
 
   requiredConfirmations(chainId: number): number {
     return this.inner.requiredConfirmations(chainId);
-  }
-
-  commitmentLevel(chainId: number): SolanaCommitmentLevel | null {
-    void chainId;
-    return null;
   }
 
   estimatedSecondsToFinality(chainId: number): number {

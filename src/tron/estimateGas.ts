@@ -13,6 +13,7 @@
  * which is the equivalent of EVM's `eth_estimateGas`. We then convert energy →
  * sun → TRX → USD using the caller-supplied price oracle.
  */
+import { assertPaymentReference } from '../core/payment-reference';
 import type { TronWebLike } from './tronweb-global';
 import { getTronWeb } from './tronweb-global';
 import { NATIVE_TOKEN_SENTINEL, type TokenSelection } from '../core/types';
@@ -123,6 +124,12 @@ export interface EstimateTronGasInput {
    * if not set. Mainnet ≈ 280 today; testnet may differ.
    */
   sunPerEnergy?: number;
+  /**
+   * The gateway's bytes32 payment reference. When set, the estimate is for the attributed
+   * `payIn*WithReference` call (MerchantPayIn V3.2.3) — what the SDK sends by default — which
+   * costs slightly more energy than the plain pay-in (one extra indexed event).
+   */
+  paymentReference?: `0x${string}`;
   /** Allow callers (tests) to inject a TronWeb instance. */
   tronWebOverride?: TronWebLike;
   /** Allow callers (tests) to inject a fetcher when sunPerEnergy is dynamically refreshed. */
@@ -182,16 +189,21 @@ export async function estimateTronGas(
   let functionSelector: string;
   let params: { type: string; value: string | number }[];
   let callValue = 0;
+  const ref = input.paymentReference;
+  if (ref !== undefined) assertPaymentReference(ref);
   if (isNative) {
-    functionSelector = 'payInNative()';
-    params = [];
+    functionSelector = ref === undefined ? 'payInNative()' : 'payInNativeWithReference(bytes32)';
+    params = ref === undefined ? [] : [{ type: 'bytes32', value: ref }];
     callValue = Number(input.amount);
   } else {
     assertTronAddress(String(input.token), 'token');
-    functionSelector = 'payInToken(address,uint256)';
+    functionSelector = ref === undefined
+      ? 'payInToken(address,uint256)'
+      : 'payInTokenWithReference(address,uint256,bytes32)';
     params = [
       { type: 'address', value: String(input.token) },
       { type: 'uint256', value: input.amount.toString() },
+      ...(ref === undefined ? [] : [{ type: 'bytes32', value: ref }]),
     ];
   }
 

@@ -1,30 +1,112 @@
 # @web3settle/merchant-sdk
 
-React component library for accepting crypto payments via Web3Settle. Drop in a provider and a pay button to take on-chain payments on **Ethereum, Polygon, Base, Solana, and TRON** directly from your users' wallets — no custody, no card data, no server-side signing.
+React component library for accepting crypto payments via Web3Settle. Drop in a provider and a pay button to take on-chain payments on **Ethereum, Base, and TRON** directly from your users' wallets — no custody, no card data, no server-side signing.
+
+> **Chain cut (2026-09-24).** Polygon was dropped permanently (decision D1) and the `./solana` subpath was archived (decision D2). `@web3settle/merchant-sdk/solana` no longer exists, and chainId `137` is gone from the default chain catalog. See `archive/solana/README.md` and the CHANGELOG's *Unreleased* entry for the full list of removed exports.
+>
+> **Which chains are supported is stated in exactly one place:** the platform's
+> `docs/CHAIN_MATRIX.md` (workspace root of the `web3settle-monorepo` repo), mirrored
+> contractually by `docs/SOFTWARE_PRODUCT_DESCRIPTION.md` §3.1. If this README and that
+> table ever disagree, the table is right.
 
 **Distribution:** each chain family lives behind a separate subpath export so the bundler only pulls in what you actually use.
 
 | Subpath | What it brings | Peer deps you must install |
 |---|---|---|
-| `@web3settle/merchant-sdk` | EVM (Ethereum / Polygon / Base) provider + button + modal + hooks | `wagmi`, `viem`, `@wagmi/core`, `@tanstack/react-query` |
-| `@web3settle/merchant-sdk/solana` | Solana provider + button + modal + hooks + PDA helpers + raw instruction builders | `@solana/web3.js`, `@solana/wallet-adapter-base`, `@solana/wallet-adapter-react`, plus the wallet-specific adapter packages you want (Phantom, Solflare, …) |
+| `@web3settle/merchant-sdk` | EVM (Ethereum / Base) provider + button + modal + hooks | `wagmi`, `viem`, `@wagmi/core`, `@tanstack/react-query` |
 | `@web3settle/merchant-sdk/tron` | TRON provider + button + modal + hooks (TronLink-backed) | TronLink browser extension at runtime. The `tronweb` package is a peer for TypeScript types only — the SDK uses the extension's injected `window.tronWeb` |
 | `@web3settle/merchant-sdk/headless` | Framework-agnostic controllers (`createPayButtonController`, `createWalletConnectController`, `createGasEstimateController`) — V0.5.0 — for Vue / Svelte / vanilla JS callers | None beyond your chain-stack peers above |
 | `@web3settle/merchant-sdk/wc` | `<web3settle-pay-button>` native HTMLElement built on top of the headless layer — V0.5.0 | None beyond your chain-stack peers above |
 
-EVM-only consumers never pay the bundle cost of the Solana / TRON stacks; Solana-only consumers never pull wagmi. Import only the subpaths you need.
+EVM-only consumers never pay the bundle cost of the TRON stack; TRON-only consumers never pull wagmi. Import only the subpaths you need.
+
+## How a payment reaches your order (read this first)
+
+The gateway can only tell you *who* paid if the pay-in carries a **payment reference**. The flow
+is four steps, and only the second happens in the browser:
+
+```
+your server ──POST /api/payment/create (X-Api-Key)──▶ gateway      → { requestId, paymentReference, status: "pending" }
+browser     ──SDK: payInNativeWithReference / payInTokenWithReference(paymentReference)──▶ merchant contract (MerchantPayIn ≥ V3.2.3)
+gateway     ──detects the deposit, links it to the request──▶ status: pending → processing → confirmed
+gateway     ──POST payment.confirmed (X-Webhook-Signature: v1=…)──▶ your webhook → credit data.metadata.userId
+```
+
+1. **Create the payment on your server** — never in the browser; it needs your storefront API key.
+   Put what you need back on the webhook into `metadata` (the webhook has no `userId` field of its
+   own). `amount` is in **whole token units of the asset you will be paid in** (e.g. `0.01` ETH or
+   `9.99` USDC), not USD: the gateway only links a deposit of at least that amount, in that asset,
+   on that network, into that storefront's contract.
+
+   ```ts
+   // server-side (Node)
+   const res = await fetch(`${GATEWAY}/api/payment/create`, {
+     method: 'POST',
+     headers: { 'content-type': 'application/json', 'x-api-key': process.env.WEB3SETTLE_API_KEY!, 'idempotency-key': orderId },
+     body: JSON.stringify({
+       network: 1,                   // BlockchainNetwork ordinal: Ethereum 0, Base 1, Tron 2
+       toAddress: contractAddress,   // GET /api/payment/deposit-address?network=Base
+       amount: 0.01,                 // whole units of the token below (here: ETH)
+       tokenAddress: undefined,      // ERC-20 address, or omit for the native coin
+       metadata: { userId, orderId },
+     }),
+   });
+   const { requestId, paymentReference } = await res.json(); // paymentReference: bytes32 hex
+   ```
+
+2. **Pay with the reference in the browser.** Either hand it to the hook yourself…
+
+   ```tsx
+   const { startPayment } = usePayment();
+   await startPayment(amountUsd, chain, token, { atomicAmount, paymentReference });
+   ```
+
+   …or let the modal ask your backend at click time through `createPayment` (it passes the exact
+   token, chain and amount about to be sent, plus `userId`):
+
+   ```tsx
+   <Web3SettleProvider config={{ apiBaseUrl, storefrontId,
+     createPayment: async (ctx) => (await fetch('/api/checkout', { method: 'POST', body: JSON.stringify(ctx) })).json(),
+   }}>
+   ```
+
+   Attribution is the **default and is enforced**: without a valid reference the SDK refuses before
+   the wallet is prompted (`MissingPaymentReferenceError`). The plain `payInNative()` /
+   `payInToken()` still exist behind the explicit `mode: 'unattributed'` opt-in — such a deposit is
+   detected and settled, but reaches your webhook with no `paymentRequestId` and no `metadata`.
+
+3. **Poll or wait.** `GET /api/payment/status/{requestId}` (server-side, same API key) goes
+   `pending` → `processing` (deposit seen, with `txHash` and live `confirmations`) → `confirmed`
+   (required depth reached) — or `failed` if a reorg removed the deposit.
+
+4. **Credit on the webhook, not on the browser's success callback.** Verify
+   `X-Webhook-Signature: v1=hex(HMAC-SHA256(secret, "{X-Webhook-Timestamp}.{rawBody}"))` over the raw
+   body, reject stale timestamps, ignore `test: true`, dedupe on `data.txHash`, and credit
+   `data.metadata.userId`. `data.amountPaid` is what arrived (gross); `data.amountInvoiced` is what
+   the request asked for — credit `min(amountPaid, amountInvoiced)` unless you handle overpayment.
+
+Needs a merchant contract at **MerchantPayIn V3.2.3** or later; a V3.2.2 contract has no
+`…WithReference` functions and the wallet's gas estimation fails. The TRON subpath (0.7.0) follows
+the same contract: `useTronPayment().startPayment(…, { paymentReference })` sends
+`payInNativeWithReference` / `payInTokenWithReference`, `TronTopUpModal` asks your
+`Web3SettleConfig.createPayment` for the reference at Pay time, and attribution is the default there too.
+
+> **Known limitation (0.6.0).** `WEB3SETTLE_PAYMENT_CONFIG_PUBKEY_PRIMARY` is still the all-zero
+> development placeholder, so the signed `GET /payment-config` never verifies against a real gateway
+> and `Web3SettlePayButton` / `Web3SettleTopUpModal` cannot load their chain list. Until the real key
+> ships in an SDK release, drive payments with `usePayment` and your own `ChainConfig` (what
+> `merchant-integration-demo` does). Tracked in the workspace `humanpending.md`.
 
 ## Features
 
-- Five chains across three stacks: **Ethereum, Polygon, Base** (wagmi + viem), **Solana** (wallet-adapter + web3.js), **TRON** (TronLink)
-- Unified `PaymentPipeline` interface so all three stacks present the same `quoteAmount → needsApproval → approve → execute → waitForReceipt` surface
+- Three chains across two stacks: **Ethereum, Base** (wagmi + viem) and **TRON** (TronLink)
+- Unified `PaymentPipeline` interface so both stacks present the same `quoteAmount → needsApproval → approve → execute → waitForReceipt` surface
 - Native currency and fungible-token payments on every chain
 - **EVM:** ERC-20 approval flow with exact-amount allowance (never unlimited). **EIP-712 permit** (V0.5.0 / segment 14.6) — when the token implements EIP-2612 the SDK signs the typed-data permit and submits `permit(...)` directly, saving the user one popup and ~$0.50 of gas.
-- **Solana:** no-approval direct transfer; PDA derivation + hand-rolled Anchor instruction builders bundled (no `@coral-xyz/anchor` dependency)
 - **TRON:** TRC-20 approve + pay, `SafeTRC20`-aware for non-return-value tokens like USDT-TRON
-- Built-in wallet connection per chain (injected + WalletConnect on EVM; Phantom / Solflare / Backpack on Solana; TronLink)
+- Built-in wallet connection per chain (injected + WalletConnect on EVM; TronLink on TRON)
 - Real-time transaction status tracking with reorg-aware confirmation counts
-- **Gas estimator** (V0.5.0 / segment 14.1) — `estimateEvmGas`, `estimateSolanaGas`, `estimateTronGas` — single `GasEstimate` shape across all three chains; the modal renders a `≈ $X` network-fee badge
+- **Gas estimator** (V0.5.0 / segment 14.1) — `estimateEvmGas`, `estimateTronGas` — single `GasEstimate` shape across both stacks; the modal renders a `≈ $X` network-fee badge
 - **Telemetry breadcrumbs** (V0.5.0 / segment 14.2) — opt-in `onTelemetry` callback emits a privacy-redacted event per failed pay-in (no plain addresses, no amounts; PII-redacted message ≤240 chars)
 - **Headless layer + Web Components** (V0.5.0 / segment 14.5) — `@web3settle/merchant-sdk/headless` and `@web3settle/merchant-sdk/wc` (`<web3settle-pay-button>` native HTMLElement) for Vue / Svelte / vanilla JS callers
 - CoinGecko price feeds with in-memory caching + stale-while-revalidate fallback
@@ -32,7 +114,7 @@ EVM-only consumers never pay the bundle cost of the Solana / TRON stacks; Solana
 - Zod-validated API responses at every boundary
 - Tree-shakeable ES modules + CommonJS output, one subpath per chain family
 - Full TypeScript type exports
-- **i18n via i18next** — English and Brazilian Portuguese shipped; straightforward extension to any locale; separate `solana.*` and `tron.*` key namespaces
+- **i18n via i18next** — English and Brazilian Portuguese shipped; straightforward extension to any locale; separate `tron.*` key namespace
 - Accessibility: role-dialog modal with focus trap, ESC close, screen-reader labels
 
 ## Install
@@ -49,10 +131,10 @@ All four are **peer dependencies** — they must live in your app's own `node_mo
 |---|---|
 | `react` | `^18.0.0 \|\| ^19.0.0` |
 | `react-dom` | `^18.0.0 \|\| ^19.0.0` |
-| `wagmi` | `^2.14.0` |
-| `viem` | `^2.21.0` |
-| `@wagmi/core` | `^2.16.0` |
-| `@tanstack/react-query` | `^5.62.0` |
+| `wagmi` | `^3.6.16` |
+| `viem` | `^2.52.2` |
+| `@wagmi/core` | `^3.5.0` (optional) |
+| `@tanstack/react-query` | `^5.101.0` |
 
 ## Quick start
 
@@ -68,7 +150,10 @@ function App() {
       config={{
         apiBaseUrl: 'https://api.yoursite.com',
         storefrontId: 'your-storefront-uuid',
-        onSuccess: (session) => console.log('Payment confirmed:', session.txHash),
+        // Your backend creates the gateway payment and returns { paymentReference, requestId }.
+        createPayment: (ctx) => fetch('/api/checkout', { method: 'POST', body: JSON.stringify(ctx) }).then((r) => r.json()),
+        // Browser-side "tx mined" signal only — credit the user from the signed webhook.
+        onSuccess: (session) => console.log('Payment sent:', session.id, session.txHash),
         onError: (error) => console.error('Payment failed:', error),
       }}
       walletConnectProjectId="your-wc-project-id" // optional
@@ -118,53 +203,6 @@ export function TopUp() {
 }
 ```
 
-## Solana quick start
-
-Install the Solana peer deps + the wallet adapters you want to offer:
-
-```bash
-npm install @web3settle/merchant-sdk \
-  @solana/web3.js @solana/wallet-adapter-base @solana/wallet-adapter-react \
-  @solana/wallet-adapter-phantom @solana/wallet-adapter-solflare \
-  @tanstack/react-query
-```
-
-Wrap your app with the Solana provider and drop in the Solana button. The `programId` is the deployed `MerchantPayIn` Anchor program ID; `merchantId` is the 32-byte identifier the backend uses to derive the merchant's config PDA (hex string, with or without `0x` prefix).
-
-```tsx
-import { useMemo } from 'react';
-import {
-  SolanaWeb3SettleProvider,
-  SolanaPayButton,
-} from '@web3settle/merchant-sdk/solana';
-import '@web3settle/merchant-sdk/styles.css';
-import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
-import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
-
-export function App() {
-  const wallets = useMemo(
-    () => [new PhantomWalletAdapter(), new SolflareWalletAdapter()],
-    [],
-  );
-
-  return (
-    <SolanaWeb3SettleProvider
-      config={{ apiBaseUrl: 'https://api.yoursite.com', storefrontId: 'uuid' }}
-      solana={{
-        programId: 'Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS',
-        merchantId: '0x' + '01'.repeat(32),
-      }}
-      wallets={wallets}
-      cluster="mainnet-beta"
-    >
-      <SolanaPayButton amount={29.99} label="Pay with SOL or SPL" />
-    </SolanaWeb3SettleProvider>
-  );
-}
-```
-
-Advanced use: `useSolanaPipeline()` returns a `SolanaPaymentPipeline` bound to the current wallet — call `quoteAmount`, `execute`, `waitForReceipt` directly. `buildPayInNativeInstruction` and `buildPayInTokenInstruction` are exposed if you want to compose pay-ins into your own Solana transactions.
-
 ## TRON quick start
 
 The TRON subpath uses the user's [TronLink extension](https://www.tronlink.org/) at runtime. No build-time TronWeb dependency is required.
@@ -189,25 +227,33 @@ export function App() {
 }
 ```
 
-`useTronPipeline()` gives you the `TronPaymentPipeline` for custom flows. The provider surfaces `{ address, connected, connecting, error }` via `useTronWeb3SettleContext().wallet`, and exposes `connect()` / `disconnect()` for manual control.
+Give the provider the same `createPayment` callback as the EVM one: the modal calls it with the
+exact chain / token / amount about to be sent, your server creates the gateway payment
+(`POST /api/payment/create`) and returns its `paymentReference`, and only then is TronLink prompted —
+with `payInNativeWithReference` / `payInTokenWithReference` (MerchantPayIn V3.2.3). Without a
+`createPayment` the modal refuses to pay; `payInMode: 'unattributed'` is the explicit opt-out.
+
+For a custom flow, `useTronPayment()` mirrors `usePayment()`:
+
+```ts
+const { startPayment } = useTronPayment();
+await startPayment(0, chain, 'native', {
+  paymentReference: instruction.paymentReference, // from your backend's POST /api/payment/create
+  atomicAmount: instruction.amountAtomic,         // sun / raw TRC-20 units; skips the SDK's own quote
+});
+```
+
+`useTronPipeline()` gives you the `TronPaymentPipeline` for custom flows (`execute(chain, token, amount, { paymentReference })`). The provider surfaces `{ address, connected, connecting, error }` via `useTronWeb3SettleContext().wallet`, and exposes `connect()` / `disconnect()` for manual control.
 
 ## Supporting multiple chains in the same app
 
-EVM, Solana, and TRON each need their own provider — they use different wallet stacks and can't share a single `Web3SettleProvider`. Nest them, or pick at render time:
+EVM and TRON each need their own provider — they use different wallet stacks and can't share a single `Web3SettleProvider`. Nest them, or pick at render time:
 
 ```tsx
 import { Web3SettleProvider, Web3SettlePayButton } from '@web3settle/merchant-sdk';
-import { SolanaWeb3SettleProvider, SolanaPayButton } from '@web3settle/merchant-sdk/solana';
 import { TronWeb3SettleProvider, TronPayButton } from '@web3settle/merchant-sdk/tron';
 
 export function MultiChainCheckout({ chain, amount }) {
-  if (chain === 'solana') {
-    return (
-      <SolanaWeb3SettleProvider config={…} solana={…} wallets={…}>
-        <SolanaPayButton amount={amount} />
-      </SolanaWeb3SettleProvider>
-    );
-  }
   if (chain === 'tron') {
     return (
       <TronWeb3SettleProvider config={…}>
@@ -223,7 +269,7 @@ export function MultiChainCheckout({ chain, amount }) {
 }
 ```
 
-All three pipelines implement the same `PaymentPipeline` interface exported from the root:
+Both pipelines implement the same `PaymentPipeline` interface exported from the root:
 
 ```ts
 import type { PaymentPipeline, PaymentReceipt, PaymentErrorKind } from '@web3settle/merchant-sdk';
@@ -250,7 +296,7 @@ so you can build your own chain-agnostic UI if the default modals don't suit.
 | Hook | Description |
 |------|-------------|
 | `useWeb3Settle()` | Access SDK config + cached payment configuration loaded from the API. Exposes `refetch()`. |
-| `usePayment()` | Full payment lifecycle: chain switch, USD→token conversion, approval, pay-in, receipt wait. Returns `{ status, txHash, error, startPayment, reset }`. |
+| `usePayment()` | Full payment lifecycle: chain switch, USD→token conversion, approval, pay-in, receipt wait. Returns `{ status, txHash, error, startPayment, reset }`. `startPayment(amount, chain, token, { paymentReference })` pays with `payIn*WithReference`; without a reference it refuses unless `mode: 'unattributed'`. |
 | `useWallet()` | Wagmi-wrapped convenience hook: `{ address, isConnected, chainId, balance, balanceSymbol, displayAddress, connectors, connect, disconnect, error }`. |
 
 ### Low-level utilities
@@ -260,8 +306,16 @@ Useful if you want to drive payments without the UI, or integrate with an existi
 ```ts
 import {
   // Contract interaction
-  executePayInNative,
+  executePayInNativeWithReference, // attributed (V3.2.3) — use these for orders
+  executePayInTokenWithReference,
+  buildPayInCall,                  // pure: { data, value } for either form
+  executePayInNative,              // unattributed — no paymentRequestId/metadata on the webhook
   executePayInToken,
+  // Payment references
+  isPaymentReference,
+  resolveAttribution,
+  MissingPaymentReferenceError,
+  InvalidPaymentReferenceError,
   approveToken,
   checkAllowance,
   getTokenBalance,
@@ -290,8 +344,6 @@ import {
   DEFAULT_CHAINS,
   CHAIN_ICONS,
   COINGECKO_CHAIN_IDS,
-  SESSION_POLL_INTERVAL_MS,
-  MAX_POLL_ATTEMPTS,
   PRICE_CACHE_TTL_MS,
   NATIVE_TOKEN_SENTINEL,
   // Zod schemas (validate at runtime)
@@ -299,7 +351,6 @@ import {
   ChainConfigSchema,
   PaymentConfigSchema,
   PaymentSessionSchema,
-  CreateSessionResponseSchema,
   Web3SettleConfigSchema,
   // Enums
   PaymentStatus,
@@ -311,7 +362,11 @@ import type {
   ChainConfig,
   PaymentConfig,
   PaymentSession,
-  CreateSessionResponse,
+  CreatePaymentContext,
+  CreatedPayment,
+  StartPaymentOptions,
+  PaymentReference,
+  PayInMode,
   Web3SettleConfig,
   PayButtonProps,
   TopUpModalProps,
@@ -343,7 +398,9 @@ import type {
 | `apiBaseUrl` | `string` | Yes | HTTPS URL of the Web3Settle backend (`MerchantPaymentApi`). |
 | `storefrontId` | `string` | Yes | Your storefront UUID from the back office. |
 | `theme` | `'dark' \| 'light'` | No | UI theme. Default `'dark'`. (Only `dark` ships today; `light` is reserved.) |
-| `onSuccess` | `(session: PaymentSession) => void` | No | Fires after the tx is confirmed at the chain's required depth. |
+| `createPayment` | `(ctx: CreatePaymentContext) => Promise<{ paymentReference, requestId? }>` | Yes, unless `payInMode: 'unattributed'` | Called on Pay, before the wallet prompt. Your backend creates the gateway payment for exactly `ctx.amount` of `ctx.token` and returns its `paymentReference`. |
+| `payInMode` | `'attributed' \| 'unattributed'` | No | Default `'attributed'`. `'unattributed'` sends the plain `payIn*` (no order linkage). |
+| `onSuccess` | `(session: PaymentSession) => void` | No | Fires after the tx is mined at the SDK's receipt depth. `session.id` is the `requestId` from `createPayment`. Not a credit signal — credit from the webhook. |
 | `onError` | `(error: Error) => void` | No | Fires on any unrecoverable failure (revert, user rejection, network error). |
 
 ### `PayButtonProps`
@@ -560,12 +617,12 @@ Visual RTL support (`dir="rtl"`) is **not** applied automatically — your host 
 | Chain | Stack | Native | Default whitelist | SDK subpath |
 |---|---|---|---|---|
 | Ethereum | EVM / wagmi | ETH | USDC, USDT | root |
-| Polygon | EVM / wagmi | POL | USDC, USDT | root |
 | Base | EVM / wagmi | ETH | USDC | root |
-| Solana mainnet-beta | wallet-adapter + web3.js | SOL | SPL tokens (any the merchant whitelists) | `/solana` |
 | TRON mainnet | TronLink | TRX | TRC-20 (incl. USDT-TRON via `SafeTRC20`) | `/tron` |
 
-All five use the same `MerchantPayIn` V3.0 contract model — immutable commission set at initialize, token whitelist managed by the admin role, no renegotiation path.
+All three use the same `MerchantPayIn` V3.0 contract model — immutable commission set at initialize, token whitelist managed by the admin role, no renegotiation path.
+
+**Removed 2026-09-24 (chain cut):** Polygon (decision D1) and Solana (decision D2). The product's GTM target is four mainnets; the fourth is an open founder decision (**D4a**) tracked in the workspace-root `humanpending.md`. Adding a fourth *EVM* chain here is a config change only — one entry in `DEFAULT_CHAINS`, `CHAIN_ICONS`, `COINGECKO_CHAIN_IDS`, `KNOWN_CONTRACT_ADDRESSES`, `DEFAULT_CONFIRMATION_THRESHOLDS`, `CHAIN_FAMILY_REGISTRY`, `DEFAULT_SECONDS_TO_FINALITY`, plus the wagmi chain list in `Web3SettleProvider`.
 
 ## Security notes
 
@@ -573,12 +630,13 @@ All five use the same `MerchantPayIn` V3.0 contract model — immutable commissi
 - **Signed PaymentConfig (V0.5+).** `GET /payment-config` returns `{ data, signedAt, signature }`; the SDK refuses to build calldata unless the Ed25519 signature verifies against `WEB3SETTLE_PAYMENT_CONFIG_PUBKEY_PRIMARY` (or `_SECONDARY` during a rotation overlap) over `signedAt + canonical_json(data)`. The constants are baked into the SDK at release time so a poisoned-DNS or CDN-edge MITM that swaps the contract address cannot be silently honoured. The `.well-known/web3settle-config-pubkey` endpoint mirrors the constants for out-of-band drift checks.
 - **Contract allowlist.** The SDK refuses to call `payIn*` against any address that is neither in the baked-in `KNOWN_CONTRACT_ADDRESSES` nor explicitly elevated by the signed `allowedContractAddresses` map for the storefront. New canonical addresses require an SDK release.
 - **ABI version handshake.** The signed payload carries `contractAbiVersion`. The SDK fails closed when it sees a revision not in `SUPPORTED_ABI_VERSIONS`.
-- **Permit allowlist.** `permit: 'auto'` falls back to `approve()` for any token whose `(name, version, chainId, verifyingContract)` quadruple is not in the SDK's baked-in `KNOWN_PERMIT_TOKENS`. `permit: 'require'` raises `UnknownPermitTokenError` on unknown tokens. To add a token, compute `permitDomainKey(name, version, chainId, verifyingContract)` and PR the resulting hex digest into `core/config.ts`; the addition ships in the next SDK release.
+- **Permit allowlist.** `permit: 'auto'` falls back to `approve()` for any token whose `(name, version, chainId, verifyingContract)` quadruple is not in the SDK's baked-in `KNOWN_PERMIT_TOKENS` (0.6.0: USDC Ethereum, DAI Ethereum, USDC Base — verified on-chain, see `docs/PERMIT_ALLOWLIST.md`). A token whose `PERMIT_TYPEHASH` is not EIP-2612's (DAI) is treated as permit-unsupported and also uses `approve()`. `permit: 'require'` raises `UnknownPermitTokenError` on unknown tokens. To add a token, compute `permitDomainKey(name, version, chainId, verifyingContract)` and PR the resulting hex digest into `core/config.ts`; the addition ships in the next SDK release.
 - **Salted telemetry digests.** `walletDigest` is salted by `(storefrontId, dayUtc)` so two storefronts of the same wallet cannot be cross-joined and the same shop's digests rotate every UTC day.
 - ERC-20 approvals request only the exact amount needed — **never** unlimited.
 - Transaction receipts are verified for `status === 'success'`; reverts surface as an `Error`.
 - Wallet connections use standard EIP-1193 providers via wagmi; the SDK does not read or persist private keys.
-- `Web3SettleApiClient` validates `storefrontId` + `sessionId` as UUIDs at construction time and builds URLs via the `URL` constructor (no string concat).
+- `Web3SettleApiClient` validates `storefrontId` as a UUID at construction time and builds URLs via the `URL` constructor (no string concat). It has no payment-creation call: that needs your API key and belongs on your server.
+- **Payment references are public.** Anyone can pay any contract with any reference; the gateway only links a deposit that could settle the request (same merchant, storefront, network, asset; at least the amount; request still pending). Never treat "a tx with my reference exists" as payment — wait for `confirmed` / the signed webhook.
 - Modal: `role="dialog"` + `aria-modal` + focus restoration + ESC-key close. Click-outside closes on mouse but the Escape handler is always present for keyboard-only users.
 
 ### Adding a token to the permit allowlist
@@ -592,8 +650,9 @@ console.log(permitDomainKey('USD Coin', '2', 1, '0xa0b86991c6218b36c1d19d4a2e9eb
 // → "<64-char hex>"
 ```
 
-Open a PR against `merchant-sdk/src/core/config.ts` adding the digest to
-`KNOWN_PERMIT_TOKENS`. Include in the PR body the source you used to verify the
+Read `name()` / `version()` from the token itself and check its `DOMAIN_SEPARATOR()` against the
+quadruple first — `docs/PERMIT_ALLOWLIST.md` has the script. Open a PR against
+`merchant-sdk/src/core/config.ts` adding the digest to `KNOWN_PERMIT_TOKENS`. Include in the PR body the source you used to verify the
 contract address (Etherscan label, official docs link). The merge ships in the
 next SDK release; backend deploys alone cannot expand the set.
 

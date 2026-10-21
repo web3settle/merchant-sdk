@@ -4,7 +4,6 @@ import {
   ChainConfigSchema,
   PaymentConfigSchema,
   PaymentSessionSchema,
-  CreateSessionResponseSchema,
 } from '../core/types';
 
 describe('TokenConfigSchema', () => {
@@ -237,21 +236,5 @@ describe('PaymentSessionSchema', () => {
       token: 'USDC',
     });
     expect(result.success).toBe(true);
-  });
-});
-
-describe('CreateSessionResponseSchema', () => {
-  it('accepts a valid session ID', () => {
-    const result = CreateSessionResponseSchema.safeParse({
-      sessionId: '550e8400-e29b-41d4-a716-446655440000',
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('rejects non-UUID session ID', () => {
-    const result = CreateSessionResponseSchema.safeParse({
-      sessionId: 'abc123',
-    });
-    expect(result.success).toBe(false);
   });
 });

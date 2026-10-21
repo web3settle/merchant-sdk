@@ -1,0 +1,44 @@
+# CHANGELOG touched (C13 part 2, 2026-10-20)
+#
+# Fails a pull request into `develop` whose changed files do not include
+# `CHANGELOG.md` (fleet rule 7: every PR touches the Unreleased section).
+#
+# Escape hatch: add the `no-changelog` label to the PR (for pure CI / tooling /
+# revert PRs with nothing user-visible). `labeled` / `unlabeled` are in the
+# trigger so applying or removing the label re-runs the gate without a push.
+#
+# The diff is `git diff --name-only <base>...HEAD` on a full-history checkout
+# (merge-base three-dot form), so files changed on `develop` after the branch
+# point do not count — only the PR's own changes do.
+name: changelog
+
+on:
+  pull_request:
+    branches: [develop]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  changelog-touched:
+    name: CHANGELOG.md touched (or label no-changelog)
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: CHANGELOG.md is among the PR's changed files
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
+          printf 'Changed files:\n%s\n' "${changed}"
+          if printf '%s\n' "${changed}" | grep -qx 'CHANGELOG.md'; then
+            echo "CHANGELOG.md touched — ok"
+          else
+            echo "::error::CHANGELOG.md was not changed by this PR. Add an Unreleased entry, or label the PR 'no-changelog' if nothing is worth noting."
+            exit 1
+          fi

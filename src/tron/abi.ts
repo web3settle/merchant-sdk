@@ -24,6 +24,33 @@ export const MERCHANT_PAY_IN_ABI = [
     stateMutability: 'nonpayable',
     type: 'function',
   },
+  // MerchantPayIn V3.2.3 (HP-16 / HP-25): the same pay-ins carrying the gateway's payment
+  // reference. Selectors are keccak of the signature, so they are identical to the EVM build:
+  // payInNativeWithReference(bytes32) = 0x817da306, payInTokenWithReference(address,uint256,bytes32) = 0xa7d020be.
+  {
+    inputs: [{ internalType: 'bytes32', name: 'paymentRef', type: 'bytes32' }],
+    name: 'payInNativeWithReference',
+    outputs: [],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { internalType: 'address', name: 'token', type: 'address' },
+      { internalType: 'uint256', name: 'amount', type: 'uint256' },
+      { internalType: 'bytes32', name: 'paymentRef', type: 'bytes32' },
+    ],
+    name: 'payInTokenWithReference',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    anonymous: false,
+    inputs: [{ indexed: true, internalType: 'bytes32', name: 'paymentRef', type: 'bytes32' }],
+    name: 'PaymentReference',
+    type: 'event',
+  },
 ] as const;
 
 export const TRC20_ABI = [

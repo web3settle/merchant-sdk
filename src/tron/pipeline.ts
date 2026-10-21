@@ -1,5 +1,6 @@
-import { PaymentPipelineError, classifyError, type PaymentPipeline, type PaymentReceipt } from '../core/pipeline';
+import { PaymentPipelineError, classifyError, type PaymentPipeline, type PaymentReceipt, type ExecuteOptions } from '../core/pipeline';
 import type { ChainConfig, TokenSelection } from '../core/types';
+import { assertPaymentReference, type PaymentReference } from '../core/payment-reference';
 import { NATIVE_TOKEN_SENTINEL } from '../core/types';
 import { usdToNativeAmount, usdToTokenAmount } from '../core/price-feed';
 import type { TronContractLike, TronWebLike } from './tronweb-global';
@@ -49,6 +50,29 @@ async function callContractMethod<T>(
     throw new PaymentPipelineError('unknown', `Method ${method} has no .call()`);
   }
   return inv.call({}) as Promise<T>;
+}
+
+/**
+ * Which MerchantPayIn method one TRON pay-in calls, and with what. Pure, shared by the pipeline
+ * and its tests so what is tested is what is sent: with a `paymentReference` the V3.2.3
+ * `payInNativeWithReference(bytes32)` / `payInTokenWithReference(address,uint256,bytes32)`,
+ * without one the plain (unattributed) `payInNative()` / `payInToken(address,uint256)`.
+ */
+export function buildTronPayInCall(input: {
+  token: TokenSelection;
+  amount: bigint;
+  paymentReference?: PaymentReference;
+}): { method: string; args: string[]; value?: string } {
+  const { token, amount, paymentReference } = input;
+  if (paymentReference !== undefined) assertPaymentReference(paymentReference);
+  if (token === NATIVE_TOKEN_SENTINEL) {
+    return paymentReference === undefined
+      ? { method: 'payInNative', args: [], value: amount.toString() }
+      : { method: 'payInNativeWithReference', args: [paymentReference], value: amount.toString() };
+  }
+  return paymentReference === undefined
+    ? { method: 'payInToken', args: [String(token), amount.toString()] }
+    : { method: 'payInTokenWithReference', args: [String(token), amount.toString(), paymentReference] };
 }
 
 export class TronPaymentPipeline implements PaymentPipeline {
@@ -158,28 +182,24 @@ export class TronPaymentPipeline implements PaymentPipeline {
     chain: ChainConfig,
     token: TokenSelection,
     amount: bigint,
+    options: ExecuteOptions = {},
   ): Promise<string> {
     const tw = this.tronWeb();
     assertTronAddress(chain.contractAddress, 'merchant contract');
+    // A reference, when given, must be a valid non-zero bytes32 — validated here too so a custom
+    // flow that bypasses useTronPayment cannot send garbage the contract would still accept.
+    const { paymentReference } = options;
+    if (paymentReference !== undefined) assertPaymentReference(paymentReference);
+    const call = buildTronPayInCall({ token, amount, paymentReference });
 
     try {
       const contract = await tw.contract().at(chain.contractAddress);
-
-      if (token === NATIVE_TOKEN_SENTINEL) {
-        return await callContractMethod<string>(
-          contract,
-          'payInNative',
-          [],
-          { send: true, value: amount.toString(), feeLimit: this.feeLimit },
-        );
-      }
-      assertTronAddress(String(token), 'token');
-      return await callContractMethod<string>(
-        contract,
-        'payInToken',
-        [String(token), amount.toString()],
-        { send: true, feeLimit: this.feeLimit },
-      );
+      if (token !== NATIVE_TOKEN_SENTINEL) assertTronAddress(String(token), 'token');
+      return await callContractMethod<string>(contract, call.method, call.args, {
+        send: true,
+        ...(call.value !== undefined ? { value: call.value } : {}),
+        feeLimit: this.feeLimit,
+      });
     } catch (err) {
       throw new PaymentPipelineError(
         classifyError(err),

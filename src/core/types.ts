@@ -1,12 +1,12 @@
 import { z } from 'zod';
 import type { TelemetryCallback } from './telemetry';
 
-// Accept EVM hex (0x + 40 hex), Solana base58 (32–44 chars), and TRON base58 (T + 33 chars).
-// Per-pipeline validators in src/solana/ and src/tron/ tighten this at construction time.
+// Accept EVM hex (0x + 40 hex) and TRON base58 (T + 33 chars).
+// Per-pipeline validators in src/tron/ tighten this at construction time.
 const CROSS_CHAIN_ADDRESS_REGEX = /^(0x[a-fA-F0-9]{40}|T[1-9A-HJ-NP-Za-km-z]{33}|[1-9A-HJ-NP-Za-km-z]{32,44})$/;
 
 export const TokenConfigSchema = z.object({
-  // Allow EVM, Solana mint (base58), or TRON T-address. Per-pipeline modules
+  // Allow EVM or TRON T-address. Per-pipeline modules
   // re-validate tightly at call time.
   address: z.string().regex(CROSS_CHAIN_ADDRESS_REGEX, 'Invalid token address'),
   symbol: z.string().min(1).max(10),
@@ -99,10 +99,6 @@ export const PaymentSessionSchema = z.object({
   updatedAt: z.string().datetime().optional(),
 });
 
-export const CreateSessionResponseSchema = z.object({
-  sessionId: z.string().uuid(),
-});
-
 export const Web3SettleConfigSchema = z.object({
   apiBaseUrl: z.string().url(),
   storefrontId: z.string().uuid(),
@@ -113,17 +109,57 @@ export type TokenConfig = z.infer<typeof TokenConfigSchema>;
 export type ChainConfig = z.infer<typeof ChainConfigSchema>;
 export type PaymentConfig = z.infer<typeof PaymentConfigSchema>;
 export type PaymentSession = z.infer<typeof PaymentSessionSchema>;
-export type CreateSessionResponse = z.infer<typeof CreateSessionResponseSchema>;
+
+/**
+ * What the modal hands your `createPayment` callback when the payer clicks Pay: exactly what is
+ * about to be sent. Create the gateway payment for `amount` of this `token` (whole token units —
+ * the gateway compares it with the deposit), put whatever you need back on the webhook
+ * (e.g. `userId`) in its `metadata`, and return its `paymentReference`.
+ */
+export interface CreatePaymentContext {
+  chainId: number;
+  /** Chain display name, e.g. "Base". */
+  chainName: string;
+  /** ERC-20 address, or `'native'` for the chain's gas token. */
+  token: string;
+  tokenSymbol: string;
+  decimals: number;
+  /** Amount in the token's smallest unit, decimal string. */
+  atomicAmount: string;
+  /** The same amount in whole token units, decimal string (what `POST /api/payment/create` takes). */
+  amount: string;
+  /** The USD amount the payer entered or the merchant fixed. */
+  amountUsd: number;
+  /** `TopUpModalProps.userId`, when the host passed one. */
+  userId?: string;
+}
+
+export interface CreatedPayment {
+  /** `paymentReference` from `POST /api/payment/create` (bytes32 hex). */
+  paymentReference: `0x${string}`;
+  /** `requestId` from the same response; surfaced as `onSuccess(session).id`. */
+  requestId?: string;
+}
 
 export interface Web3SettleConfig {
   apiBaseUrl: string;
   storefrontId: string;
   theme?: 'dark' | 'light';
+  /**
+   * Creates the payment on **your** backend and returns its `paymentReference`. Called on Pay,
+   * before the wallet is prompted. Your server calls `POST /api/payment/create` with its storefront
+   * API key — never expose that key to the browser. Required unless `payInMode` is
+   * `'unattributed'`: without a reference the deposit reaches your webhook with no
+   * `paymentRequestId` / `metadata`, so you cannot tell whose it is.
+   */
+  createPayment?: (ctx: CreatePaymentContext) => Promise<CreatedPayment>;
+  /** `'attributed'` (default) or the explicit `'unattributed'` opt-in. See `StartPaymentOptions.mode`. */
+  payInMode?: 'attributed' | 'unattributed';
   onSuccess?: (session: PaymentSession) => void;
   onError?: (error: Error) => void;
   /**
    * Optional opt-in failure breadcrumb. When the SDK catches a payment
-   * failure on EVM, Solana, or TRON, it builds a sanitized
+   * failure on EVM or TRON, it builds a sanitized
    * {@link TelemetryEvent} (no addresses except hashed; no amounts) and
    * passes it to this callback. Throwing is caught and ignored — telemetry
    * never blocks the user-facing flow. See `core/telemetry.ts` for the
@@ -199,7 +235,7 @@ export interface TransactionStatusProps {
   error?: string;
   /**
    * Optional Segment 2.2 inputs — when supplied, the component renders an
-   * "X of N confirmations" label (or commitment-level state for Solana)
+   * "X of N confirmations" label
    * during {@link PaymentStatus.Confirming}. Both must be set for the label
    * to render — supplying only one is a no-op.
    *
@@ -208,8 +244,7 @@ export interface TransactionStatusProps {
    * `publicClient` / `connection`) drives the polling loop.
    */
   chainId?: number;
-  /** Best-effort current confirmation depth (for EVM/TRON) or commitment
-   *  rank (0 pending, 1 confirmed, 2 finalized) for Solana. */
+  /** Best-effort current confirmation depth. */
   currentConfirmations?: number;
 }
 

@@ -72,14 +72,14 @@ re-send.
   - `gateway-core-backend` (C# APIs + background workers)
   - `gateway-backoffice-portal`, `merchant-portal`, `merchant-integration-demo`
   - `merchant-sdk` (`@web3settle/merchant-sdk`)
-  - `smart-contracts` (EVM, Solana, TRON)
+  - `smart-contracts` (EVM, TRON)
   - `gateway-infra` (Docker, Kubernetes, deploy scripts)
   - `www-web3settle-com` (marketing site)
 - Deployed production services under `*.web3settle.com` and the public
   Merchant Payment API (`/api/*` on the payment endpoint).
-- Deployed smart contracts on Ethereum mainnet, Polygon, Base, Tron mainnet,
-  and Solana mainnet-beta once addresses are published in
-  `smart-contracts/DEPLOYMENTS.md`.
+- Deployed smart contracts on Ethereum mainnet, Base, and Tron mainnet once
+  addresses are published in `smart-contracts/DEPLOYMENTS.md`. (Polygon was
+  dropped and Solana archived on 2026-09-24 — neither is in scope.)
 
 **Out of scope** — please do not report:
 

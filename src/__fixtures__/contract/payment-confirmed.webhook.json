@@ -1,0 +1,37 @@
+{
+  "description": "payment.confirmed as WebhookRelay delivers it: \u0060body\u0060 is the exact string that is signed; X-Webhook-Signature = v1=hex(HMAC-SHA256(secret, \u0022{X-Webhook-Timestamp}.{body}\u0022)).",
+  "secret": "whsec_TEST_ONLY_contract_fixture_secret_0000000000000000",
+  "headers": {
+    "X-Webhook-Signature": "v1=908db0bc7d3204829bcce6ad5a4595611d79451066c5cec8fb5d930472a9a4fa",
+    "X-Webhook-Timestamp": "1792497600",
+    "X-Webhook-Delivery-Id": "55555555-5555-4555-8555-555555555555",
+    "X-Webhook-Attempt": "1"
+  },
+  "body": "{\u0022eventType\u0022:\u0022payment.confirmed\u0022,\u0022eventId\u0022:\u002244444444-4444-4444-8444-444444444444\u0022,\u0022timestamp\u0022:\u00222026-10-20T12:00:00\u002B00:00\u0022,\u0022test\u0022:false,\u0022data\u0022:{\u0022storefrontId\u0022:\u002211111111-1111-4111-8111-111111111111\u0022,\u0022merchantId\u0022:\u002222222222-2222-4222-8222-222222222222\u0022,\u0022paymentRequestId\u0022:\u002233333333-3333-4333-8333-333333333333\u0022,\u0022metadata\u0022:{\u0022orderId\u0022:\u0022ORD-1001\u0022},\u0022network\u0022:\u0022Base\u0022,\u0022txHash\u0022:\u00220xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\u0022,\u0022amount\u0022:\u002249.99\u0022,\u0022amountPaid\u0022:\u002249.99\u0022,\u0022amountInvoiced\u0022:\u002249.99\u0022,\u0022token\u0022:\u00220x833589fcd6edb6e08f4c7c32d4f71b54bda02913\u0022,\u0022tokenSymbol\u0022:\u0022USDC\u0022,\u0022payer\u0022:\u00220x2222222222222222222222222222222222222222\u0022,\u0022contractAddress\u0022:\u00220x1111111111111111111111111111111111111111\u0022,\u0022blockNumber\u0022:23456789,\u0022confirmations\u0022:12,\u0022confirmationsRequired\u0022:12}}",
+  "payload": {
+    "eventType": "payment.confirmed",
+    "eventId": "44444444-4444-4444-8444-444444444444",
+    "timestamp": "2026-10-20T12:00:00\u002B00:00",
+    "test": false,
+    "data": {
+      "storefrontId": "11111111-1111-4111-8111-111111111111",
+      "merchantId": "22222222-2222-4222-8222-222222222222",
+      "paymentRequestId": "33333333-3333-4333-8333-333333333333",
+      "metadata": {
+        "orderId": "ORD-1001"
+      },
+      "network": "Base",
+      "txHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "amount": "49.99",
+      "amountPaid": "49.99",
+      "amountInvoiced": "49.99",
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "tokenSymbol": "USDC",
+      "payer": "0x2222222222222222222222222222222222222222",
+      "contractAddress": "0x1111111111111111111111111111111111111111",
+      "blockNumber": 23456789,
+      "confirmations": 12,
+      "confirmationsRequired": 12
+    }
+  }
+}

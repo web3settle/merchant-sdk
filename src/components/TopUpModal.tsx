@@ -13,10 +13,10 @@ import { getTokenBalance } from '../core/contract';
 import { estimateEvmGas, type GasEstimate } from '../evm/estimateGas';
 import { defaultConfirmationPolicy } from '../core/ConfirmationPolicy';
 
-// Wagmi is configured for these EVM chains in Web3SettleProvider. Solana / Tron flow through
-// dedicated sub-entrypoints (`@web3settle/merchant-sdk/solana`, `/tron`) — the main modal is
+// Wagmi is configured for these EVM chains in Web3SettleProvider. TRON flows through its
+// dedicated sub-entrypoint (`@web3settle/merchant-sdk/tron`) — the main modal is
 // EVM-only on purpose, so the storefront's non-EVM chains are filtered from the picker.
-const SUPPORTED_EVM_CHAIN_IDS = new Set([1, 137, 8453]);
+const SUPPORTED_EVM_CHAIN_IDS = new Set([1, 8453]);
 
 interface TokenOption {
   /** Selection sentinel: token address for ERC20s, the literal "native" for the gas token. */
@@ -68,6 +68,17 @@ function pickDefaultToken(options: TokenOption[]): TokenOption | null {
   return firstErc20 ?? options[0] ?? null;
 }
 
+/** `Object.is` over two dependency tuples — pairs an async result with the inputs it was computed for. */
+function sameInputs(a: readonly unknown[], b: readonly unknown[]): boolean {
+  return a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
+}
+
+/** An async result remembered together with the inputs it answers; stale when the inputs moved on. */
+interface ForInputs<T> {
+  inputs: readonly unknown[];
+  value: T;
+}
+
 function CloseIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -109,6 +120,7 @@ export function Web3SettleTopUpModal({
   isOpen,
   onClose,
   amount: fixedAmount,
+  userId,
 }: TopUpModalProps) {
   const { config } = useWeb3SettleContext();
   const { paymentConfig, isLoading: configLoading, error: configError, refetch: refetchConfig } =
@@ -125,61 +137,83 @@ export function Web3SettleTopUpModal({
   // `enteredAmount` only matters when the merchant didn't fix `amount` via prop. The effective
   // amount used everywhere downstream (quote, payment) is the merge of fixedAmount + entered.
   const [enteredAmount, setEnteredAmount] = useState<string>('');
-  const [selectedChainId, setSelectedChainId] = useState<number | null>(null);
-  const [selectedToken, setSelectedToken] = useState<string | null>(null);
-  const [tokenBalance, setTokenBalance] = useState<string | null>(null);
+  // `null` = nothing picked explicitly; the shown chain/token are derived below (first EVM chain,
+  // most useful token) so the modal opens already pointed at something.
+  const [pickedChainId, setSelectedChainId] = useState<number | null>(null);
+  const [pickedToken, setSelectedToken] = useState<string | null>(null);
+  const [tokenBalanceFor, setTokenBalanceFor] = useState<ForInputs<string | null> | null>(null);
+  const [gasEstimateFor, setGasEstimateFor] = useState<ForInputs<GasEstimate | null> | null>(null);
   const [showConnectorList, setShowConnectorList] = useState(false);
+  // The merchant backend's createPayment step (paymentReference). Its failure is shown like a
+  // payment failure; `requestId` becomes the onSuccess session id.
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [creatingPayment, setCreatingPayment] = useState(false);
+  const [requestId, setRequestId] = useState<string | null>(null);
 
   // Reset on open so opening the modal twice in a row doesn't keep stale state from the first
   // round (esp. payment status — closing on success and re-opening should give a fresh form).
-  useEffect(() => {
-    if (!isOpen) return;
-    setEnteredAmount('');
-    setSelectedChainId(null);
-    setSelectedToken(null);
-    setTokenBalance(null);
-    setShowConnectorList(false);
-    resetPayment();
-  }, [isOpen, resetPayment]);
+  // Done during render (React's "adjust state when a prop changes" pattern) rather than in an
+  // effect, so the stale form never reaches the screen.
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (wasOpen !== isOpen) {
+    setWasOpen(isOpen);
+    if (isOpen) {
+      setEnteredAmount('');
+      setSelectedChainId(null);
+      setSelectedToken(null);
+      setTokenBalanceFor(null);
+      setGasEstimateFor(null);
+      setShowConnectorList(false);
+      setCreateError(null);
+      setCreatingPayment(false);
+      setRequestId(null);
+      resetPayment();
+    }
+  }
 
   // ── Derived ─────────────────────────────────────────────────────────────
   const evmChains = useMemo(
     () => paymentConfig?.chains.filter((c) => SUPPORTED_EVM_CHAIN_IDS.has(c.chainId)) ?? [],
     [paymentConfig],
   );
+  // Auto-pick the first EVM chain so the user opens the modal already pointed at something.
+  const selectedChainId = pickedChainId ?? evmChains[0]?.chainId ?? null;
   const selectedChain = evmChains.find((c) => c.chainId === selectedChainId) ?? null;
   const tokenOptions = useMemo(
     () => (selectedChain ? buildTokenOptions(selectedChain) : []),
     [selectedChain],
   );
+  // Auto-pick the most useful token (USDT > USDC > first ERC20 > native) so the user only has
+  // to override if they want a different one; a pick that the current chain doesn't offer falls
+  // back to that chain's default.
+  const selectedToken =
+    pickedToken !== null && tokenOptions.some((o) => o.value === pickedToken)
+      ? pickedToken
+      : (pickDefaultToken(tokenOptions)?.value ?? null);
   const selectedTokenOption = tokenOptions.find((t) => t.value === selectedToken) ?? null;
+
+  // Switching chains re-resolves the token the same way the derivation above does, so the
+  // remembered pick is what the user would see (a pick the new chain doesn't offer is replaced by
+  // the new chain's default and does not resurface on a later switch back).
+  const handleChainSelect = useCallback(
+    (chainId: number) => {
+      setSelectedChainId(chainId);
+      const chain = evmChains.find((c) => c.chainId === chainId);
+      const options = chain ? buildTokenOptions(chain) : [];
+      setSelectedToken((prev) =>
+        prev !== null && options.some((o) => o.value === prev)
+          ? prev
+          : (pickDefaultToken(options)?.value ?? null),
+      );
+    },
+    [evmChains],
+  );
 
   const effectiveAmount = useMemo(() => {
     if (typeof fixedAmount === 'number' && fixedAmount > 0) return fixedAmount;
     const parsed = parseFloat(enteredAmount);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }, [fixedAmount, enteredAmount]);
-
-  // Auto-pick the first EVM chain so the user opens the modal already pointed at something.
-  useEffect(() => {
-    if (selectedChainId !== null) return;
-    const first = evmChains[0];
-    if (!first) return;
-    setSelectedChainId(first.chainId);
-  }, [evmChains, selectedChainId]);
-
-  // Auto-pick the most useful token (USDT > USDC > first ERC20 > native) so the user only has
-  // to override if they want a different one. Re-runs when the chain changes.
-  useEffect(() => {
-    if (tokenOptions.length === 0) {
-      setSelectedToken(null);
-      return;
-    }
-    const stillValid = selectedToken && tokenOptions.some((o) => o.value === selectedToken);
-    if (stillValid) return;
-    const def = pickDefaultToken(tokenOptions);
-    setSelectedToken(def?.value ?? null);
-  }, [tokenOptions, selectedToken]);
 
   // ── Quote ────────────────────────────────────────────────────────────────
   const quoteToken = selectedToken === NATIVE_TOKEN_SENTINEL ? 'native' : selectedToken;
@@ -201,11 +235,16 @@ export function Web3SettleTopUpModal({
   // ── Gas estimate (item 14.1) ────────────────────────────────────────────
   // Best-effort: a failure here just hides the "≈ $X fee" badge — never blocks
   // the pay flow.
-  const [gasEstimate, setGasEstimate] = useState<GasEstimate | null>(null);
+  // The estimate is remembered with the inputs it was computed for (state declared with the rest
+  // of the modal state above), so a change of wallet, chain, token or quote hides it (shows
+  // nothing) until the new estimate lands — never a stale fee.
+  const gasInputs = [publicClient, wallet.address, selectedChain, selectedTokenOption, quote];
+  const gasEstimate =
+    gasEstimateFor && sameInputs(gasEstimateFor.inputs, gasInputs) ? gasEstimateFor.value : null;
   useEffect(() => {
     let cancelled = false;
-    setGasEstimate(null);
     const account = wallet.address;
+    const inputs = [publicClient, account, selectedChain, selectedTokenOption, quote];
     if (
       !publicClient ||
       !account ||
@@ -236,19 +275,24 @@ export function Web3SettleTopUpModal({
           // the modal renders "≈ network fee" without a $ figure.
           selectedTokenOption.isNative ? { priceUsd: quote.priceUsd } : {},
         );
-        if (!cancelled) setGasEstimate(est);
+        if (!cancelled) setGasEstimateFor({ inputs, value: est });
       } catch {
-        if (!cancelled) setGasEstimate(null);
+        if (!cancelled) setGasEstimateFor({ inputs, value: null });
       }
     };
     void run();
     return () => { cancelled = true; };
   }, [publicClient, wallet.address, selectedChain, selectedTokenOption, quote]);
 
+  // Same pairing as the gas estimate: a balance is only shown for the wallet/chain/token it was
+  // read for, so switching any of them shows "—" until the new balance lands.
+  const balanceInputs = [wallet.address, publicClient, selectedChain, selectedTokenOption];
+  const tokenBalance =
+    tokenBalanceFor && sameInputs(tokenBalanceFor.inputs, balanceInputs) ? tokenBalanceFor.value : null;
   useEffect(() => {
     let cancelled = false;
-    setTokenBalance(null);
     const account = wallet.address;
+    const inputs = [account, publicClient, selectedChain, selectedTokenOption];
     if (!account || !publicClient || !selectedChain || !selectedTokenOption) return;
 
     const loadBalance = async () => {
@@ -256,7 +300,7 @@ export function Web3SettleTopUpModal({
         if (selectedTokenOption.isNative) {
           const bal = await publicClient.getBalance({ address: account });
           if (!cancelled) {
-            setTokenBalance(Number(formatUnits(bal, selectedTokenOption.decimals)).toFixed(4));
+            setTokenBalanceFor({ inputs, value: Number(formatUnits(bal, selectedTokenOption.decimals)).toFixed(4) });
           }
         } else {
           const bal = await getTokenBalance(
@@ -265,11 +309,11 @@ export function Web3SettleTopUpModal({
             account,
           );
           if (!cancelled) {
-            setTokenBalance(Number(formatUnits(bal, selectedTokenOption.decimals)).toFixed(4));
+            setTokenBalanceFor({ inputs, value: Number(formatUnits(bal, selectedTokenOption.decimals)).toFixed(4) });
           }
         }
       } catch {
-        if (!cancelled) setTokenBalance(null);
+        if (!cancelled) setTokenBalanceFor({ inputs, value: null });
       }
     };
     void loadBalance();
@@ -281,7 +325,7 @@ export function Web3SettleTopUpModal({
   useEffect(() => {
     if (status === PaymentStatus.Success && txHash && onSuccess) {
       onSuccess({
-        id: '00000000-0000-0000-0000-000000000000',
+        id: requestId ?? '00000000-0000-0000-0000-000000000000',
         amount: effectiveAmount ?? 0,
         status: 'confirmed',
         txHash,
@@ -289,7 +333,7 @@ export function Web3SettleTopUpModal({
         token: selectedTokenOption?.symbol,
       });
     }
-  }, [status, txHash, onSuccess, effectiveAmount, selectedChain, selectedTokenOption]);
+  }, [status, txHash, onSuccess, effectiveAmount, selectedChain, selectedTokenOption, requestId]);
 
   useEffect(() => {
     if (status === PaymentStatus.Error && paymentError && onError) {
@@ -321,6 +365,7 @@ export function Web3SettleTopUpModal({
 
   // ── Action: pay ──────────────────────────────────────────────────────────
   const isProcessing =
+    creatingPayment ||
     status === PaymentStatus.Connecting ||
     status === PaymentStatus.Approving ||
     status === PaymentStatus.Sending ||
@@ -335,20 +380,57 @@ export function Web3SettleTopUpModal({
     !quoteError &&
     !isProcessing;
 
-  const handlePay = useCallback(() => {
-    if (!canPay || !selectedChain || !selectedToken || !quote || !effectiveAmount) return;
-    void startPayment(effectiveAmount, selectedChain, selectedToken, {
+  const { createPayment, payInMode } = config;
+  const handlePay = useCallback(async () => {
+    if (!canPay || !selectedChain || !selectedToken || !quote || !effectiveAmount || !selectedTokenOption) return;
+    setCreateError(null);
+    // Attributed (the default): the merchant backend creates the payment for exactly what is about
+    // to be sent and hands back its paymentReference; only then is the wallet prompted.
+    let paymentReference: `0x${string}` | undefined;
+    if (payInMode !== 'unattributed') {
+      if (!createPayment) {
+        setCreateError(
+          'Payments are not attributable: this storefront has no createPayment callback configured ' +
+            '(Web3SettleConfig.createPayment), so the payment would reach the merchant without an order.',
+        );
+        return;
+      }
+      setCreatingPayment(true);
+      try {
+        const created = await createPayment({
+          chainId: selectedChain.chainId,
+          chainName: selectedChain.name,
+          token: selectedToken,
+          tokenSymbol: selectedTokenOption.symbol,
+          decimals: selectedTokenOption.decimals,
+          atomicAmount: quote.amountToken,
+          amount: formatUnits(BigInt(quote.amountToken), selectedTokenOption.decimals),
+          amountUsd: effectiveAmount,
+          userId,
+        });
+        paymentReference = created.paymentReference;
+        setRequestId(created.requestId ?? null);
+      } catch (err) {
+        setCreateError(err instanceof Error ? err.message : 'Could not create the payment');
+        return;
+      } finally {
+        setCreatingPayment(false);
+      }
+    }
+    await startPayment(effectiveAmount, selectedChain, selectedToken, {
       atomicAmount: quote.amountToken,
       onTelemetry: config.onTelemetry,
       contractVersion: config.contractVersion,
+      paymentReference,
+      mode: payInMode,
     });
-  }, [canPay, selectedChain, selectedToken, quote, effectiveAmount, startPayment, config.onTelemetry, config.contractVersion]);
+  }, [canPay, selectedChain, selectedToken, selectedTokenOption, quote, effectiveAmount, startPayment, createPayment, payInMode, userId, config.onTelemetry, config.contractVersion]);
 
   if (!isOpen) return null;
 
   // ── Render ───────────────────────────────────────────────────────────────
   const showSuccess = status === PaymentStatus.Success;
-  const showError = status === PaymentStatus.Error && paymentError;
+  const showError = createError !== null || (status === PaymentStatus.Error && Boolean(paymentError));
 
   return (
     <div
@@ -488,7 +570,7 @@ export function Web3SettleTopUpModal({
                   <ChainPicker
                     chains={evmChains}
                     selectedChainId={selectedChainId}
-                    onSelect={setSelectedChainId}
+                    onSelect={handleChainSelect}
                   />
                   <TokenPicker
                     options={tokenOptions}
@@ -514,8 +596,11 @@ export function Web3SettleTopUpModal({
               {/* Inline error from a previously failed payment attempt. */}
               {showError && (
                 <ErrorBanner
-                  message={paymentError ?? 'Payment failed'}
-                  onDismiss={resetPayment}
+                  message={createError ?? paymentError ?? 'Payment failed'}
+                  onDismiss={() => {
+                    setCreateError(null);
+                    resetPayment();
+                  }}
                 />
               )}
 
@@ -533,7 +618,7 @@ export function Web3SettleTopUpModal({
                 <>
                   <button
                     type="button"
-                    onClick={handlePay}
+                    onClick={() => void handlePay()}
                     disabled={!canPay || !effectiveAmount}
                     className="
                       w3s-w-full w3s-rounded-xl w3s-bg-indigo-600 w3s-py-3
@@ -943,13 +1028,9 @@ function ProcessingState({
     typeof chainId === 'number' ? policy.requiredConfirmations(chainId) : null;
   const etaSec =
     typeof chainId === 'number' ? policy.estimatedSecondsToFinality(chainId) : 0;
-  const family = typeof chainId === 'number' ? policy.family(chainId) : null;
-  const isSolana = family === 'solana';
   const hint =
     required && etaSec > 0
-      ? isSolana
-        ? `Awaiting commitment (~${Math.round(etaSec)} s)`
-        : `Waiting for ${required} confirmations (~${Math.round(etaSec)} s)`
+      ? `Waiting for ${required} confirmations (~${Math.round(etaSec)} s)`
       : 'This usually takes 10–60 seconds.';
   return (
     <div role="status" aria-live="polite" className="w3s-flex w3s-flex-col w3s-items-center w3s-gap-4 w3s-py-8">
@@ -1076,7 +1157,7 @@ function NoChainsState() {
         <h3 className="w3s-text-base w3s-font-semibold w3s-text-white">No payment options yet</h3>
         <p className="w3s-mt-1 w3s-text-xs w3s-text-slate-400">
           The merchant hasn&apos;t bound any supported networks to this storefront. Once they deploy
-          a contract on Ethereum, Polygon, or Base and enable a token, this modal will let you pay.
+          a contract on Ethereum or Base and enable a token, this modal will let you pay.
         </p>
       </div>
     </div>

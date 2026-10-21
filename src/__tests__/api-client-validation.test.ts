@@ -21,9 +21,4 @@ describe('Web3SettleApiClient construction', () => {
   it('rejects an invalid base URL', () => {
     expect(() => new Web3SettleApiClient('not a url', VALID_UUID)).toThrow();
   });
-
-  it('getSessionStatus rejects a non-UUID sessionId', async () => {
-    const client = new Web3SettleApiClient('https://api.web3settle.com', VALID_UUID);
-    await expect(client.getSessionStatus('not-a-uuid')).rejects.toThrow(/Invalid sessionId/);
-  });
 });

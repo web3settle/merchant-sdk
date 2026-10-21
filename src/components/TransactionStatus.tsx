@@ -79,8 +79,8 @@ function getStepState(
 /**
  * Props extension that lets callers pass a custom {@link ConfirmationPolicy}.
  * Kept as an addition (not on `TransactionStatusProps`) so existing
- * consumers compile unchanged. Storefronts that want a high-value Solana
- * setup can supply `createSolanaConfirmationPolicy('finalized')`.
+ * consumers compile unchanged. Storefronts that want deeper confirmation
+ * targets can supply their own `ConfirmationPolicy` implementation.
  */
 export interface TransactionStatusExtraProps {
   confirmationPolicy?: ConfirmationPolicy;
@@ -158,7 +158,7 @@ export function TransactionStatus({
   }
 
   // Segment 2.2: when chainId + currentConfirmations are supplied, render
-  // a render-ready "X of N" or commitment-level label using the policy.
+  // a render-ready "X of N" label using the policy.
   // Falls back silently when either prop is missing — so existing callers
   // keep their unchanged "Confirming on-chain..." text.
   const policy = confirmationPolicy ?? defaultConfirmationPolicy;

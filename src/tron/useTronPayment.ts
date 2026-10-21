@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { PaymentStatus, type ChainConfig, type TokenSelection } from '../core/types';
 import { classifyError, PaymentPipelineError } from '../core/pipeline';
+import { resolveAttribution, type PayInMode, type ResolvedAttribution } from '../core/payment-reference';
 import { useTronWeb3SettleContext } from './TronProvider';
 import {
   buildTelemetryEvent,
@@ -11,7 +12,27 @@ import {
   type TelemetryPhase,
 } from '../core/telemetry';
 
-interface TronStartPaymentOpts {
+export interface TronStartPaymentOpts {
+  /**
+   * The bytes32 `paymentReference` your backend got from `POST /api/payment/create` for this
+   * order. The hook then calls `payInNativeWithReference` / `payInTokenWithReference`
+   * (MerchantPayIn V3.2.3) and the gateway attributes the deposit to that request — same contract
+   * as the EVM `usePayment`.
+   */
+  paymentReference?: `0x${string}`;
+  /**
+   * `'attributed'` (default) requires `paymentReference` and refuses to prompt the wallet without
+   * one. `'unattributed'` sends the plain `payIn*` — the deposit reaches your webhook with no
+   * `paymentRequestId` / `metadata`. Explicit opt-in only.
+   */
+  mode?: PayInMode;
+  /**
+   * Pre-quoted amount in the asset's smallest unit (sun, or raw TRC-20 units), decimal string.
+   * When set the hook sends exactly this instead of quoting again — so the amount the payment was
+   * created for and the amount sent cannot drift apart (the gateway links only a deposit of at
+   * least the requested amount).
+   */
+  atomicAmount?: string;
   onTelemetry?: TelemetryCallback;
   walletId?: string;
   contractVersion?: string;
@@ -81,6 +102,18 @@ export function useTronPayment(): UseTronPaymentReturn {
         return;
       }
 
+      // Decide attribution before anything reaches the wallet: attributed mode (the default)
+      // never prompts without a valid reference.
+      let attribution: ResolvedAttribution;
+      try {
+        attribution = resolveAttribution({ paymentReference: opts.paymentReference, mode: opts.mode });
+      } catch (err) {
+        setError(classifyMessage(err));
+        setStatus(PaymentStatus.Error);
+        return;
+      }
+      const paymentReference = attribution.mode === 'attributed' ? attribution.paymentReference : undefined;
+
       setStatus(PaymentStatus.Connecting);
       setTxHash(null);
       setError(null);
@@ -88,7 +121,9 @@ export function useTronPayment(): UseTronPaymentReturn {
       let phase: TelemetryPhase = 'connect';
       try {
         phase = 'quote';
-        const raw = await pipeline.quoteAmount(amount, chain, token);
+        const raw = opts.atomicAmount !== undefined
+          ? BigInt(opts.atomicAmount)
+          : await pipeline.quoteAmount(amount, chain, token);
 
         if (await pipeline.needsApproval(chain, token, raw)) {
           phase = 'approve';
@@ -104,7 +139,7 @@ export function useTronPayment(): UseTronPaymentReturn {
 
         phase = 'send';
         setStatus(PaymentStatus.Sending);
-        const hash = await pipeline.execute(chain, token, raw);
+        const hash = await pipeline.execute(chain, token, raw, { paymentReference });
         setTxHash(hash);
 
         phase = 'confirm';

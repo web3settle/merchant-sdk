@@ -59,22 +59,6 @@
     "poweredBy": "Desenvolvido por",
     "brand": "Web3Settle"
   },
-  "solana": {
-    "wallet": {
-      "connect": "Conectar carteira Solana",
-      "noAdapters": "Nenhum adaptador de carteira Solana registrado. Passe-os via wallets={...} em SolanaWeb3SettleProvider.",
-      "ready": "Pronto",
-      "installed": "Instalado",
-      "loadable": "Disponível",
-      "notDetected": "Não detectado",
-      "unsupported": "Não suportado"
-    },
-    "errors": {
-      "notConnected": "Carteira não conectada",
-      "missingSendTransaction": "O adaptador de carteira não expõe sendTransaction",
-      "receiptFailed": "Falha ao aguardar o recibo na Solana"
-    }
-  },
   "tron": {
     "wallet": {
       "connect": "Conectar carteira TRON",

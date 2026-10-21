@@ -10,6 +10,7 @@ export { WalletConnect } from './components/WalletConnect';
 // ── Hooks ────────────────────────────────────────────────────────────────────
 export { useWeb3Settle } from './hooks/useWeb3Settle';
 export { usePayment } from './hooks/usePayment';
+export type { StartPaymentOptions } from './hooks/usePayment';
 export { useWallet } from './hooks/useWallet';
 
 // ── EVM utilities ────────────────────────────────────────────────────────────
@@ -20,7 +21,6 @@ export {
 export type {
   GasEstimate,
   EvmGasBreakdown,
-  SolanaGasBreakdown,
   TronGasBreakdown,
   FeeOracleOptions,
   EstimateEvmGasInput,
@@ -63,10 +63,10 @@ export type {
 // Cross-chain abstraction over per-chain confirmation/finality. Storefronts
 // should consume `defaultConfirmationPolicy` instead of branching on
 // `chainId` to decide "is this safe yet". See `core/ConfirmationPolicy.ts`.
+// Active families after the 2026-09-24 chain cut: EVM (non-Polygon) + TRON.
 export {
   DefaultConfirmationPolicy,
   defaultConfirmationPolicy,
-  createHighValueConfirmationPolicy,
   DEFAULT_CONFIRMATION_THRESHOLDS,
   CHAIN_FAMILY_REGISTRY,
   DEFAULT_SECONDS_TO_FINALITY,
@@ -75,15 +75,17 @@ export type {
   ConfirmationPolicy,
   ConfirmationProgress,
   ChainFamily,
-  SolanaCommitmentLevel,
 } from './core/ConfirmationPolicy';
 export { evmConfirmationPolicy } from './evm/confirmationPolicy';
 
 // ── Core ─────────────────────────────────────────────────────────────────────
 export { Web3SettleApiClient } from './core/api-client';
 export {
+  buildPayInCall,
   executePayInNative,
+  executePayInNativeWithReference,
   executePayInToken,
+  executePayInTokenWithReference,
   approveToken,
   checkAllowance,
   getTokenBalance,
@@ -104,8 +106,6 @@ export {
   DEFAULT_CHAINS,
   CHAIN_ICONS,
   COINGECKO_CHAIN_IDS,
-  SESSION_POLL_INTERVAL_MS,
-  MAX_POLL_ATTEMPTS,
   PRICE_CACHE_TTL_MS,
   WEB3SETTLE_PAYMENT_CONFIG_PUBKEY_PRIMARY,
   WEB3SETTLE_PAYMENT_CONFIG_PUBKEY_SECONDARY,
@@ -114,6 +114,14 @@ export {
   SUPPORTED_ABI_VERSIONS,
   KNOWN_PERMIT_TOKENS,
 } from './core/config';
+export {
+  isPaymentReference,
+  assertPaymentReference,
+  resolveAttribution,
+  MissingPaymentReferenceError,
+  InvalidPaymentReferenceError,
+} from './core/payment-reference';
+export type { PaymentReference, PayInMode, ResolvedAttribution } from './core/payment-reference';
 export { canonicalJson } from './core/canonical-json';
 export { verifyPaymentConfig } from './core/payment-config-verifier';
 export type { PaymentConfigVerifyResult, PaymentConfigVerifyFailure } from './core/payment-config-verifier';
@@ -126,7 +134,6 @@ export {
   ChainConfigSchema,
   PaymentConfigSchema,
   PaymentSessionSchema,
-  CreateSessionResponseSchema,
   Web3SettleConfigSchema,
   SignedPaymentConfigEnvelopeSchema,
 } from './core/types';
@@ -135,7 +142,8 @@ export type {
   ChainConfig,
   PaymentConfig,
   PaymentSession,
-  CreateSessionResponse,
+  CreatePaymentContext,
+  CreatedPayment,
   Web3SettleConfig,
   PayButtonProps,
   TopUpModalProps,

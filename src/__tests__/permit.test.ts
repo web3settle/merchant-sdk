@@ -5,12 +5,16 @@ import {
   buildPermitTypedData,
   signPermit,
   validatePermitSignature,
+  UnknownPermitTokenError,
   MAX_PERMIT_DEADLINE_WINDOW_SECONDS,
 } from '../evm/permit';
 
-const OWNER = '0xA0b86991C6218b36c1d19D4a2e9Eb0cE3606eB48' as const;
+const OWNER = '0x3333333333333333333333333333333333333333' as const;
 const SPENDER = '0x1111111111111111111111111111111111111111' as const;
 const TOKEN = '0x2222222222222222222222222222222222222222' as const;
+// A domain on the ADR-0004 allowlist (USDC on Ethereum: "USD Coin" / "2"), so each signPermit
+// test below reaches the guard it is named after instead of stopping at the allowlist gate.
+const USDC_ETHEREUM = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' as const;
 
 // 65-byte signature (132 hex chars) shaped like a real EIP-712 reply. r and s
 // are non-zero, s is in the low half, v is 27. Used as the wallet's mock reply
@@ -77,7 +81,7 @@ describe('assertDeadlineFresh', () => {
 describe('buildPermitTypedData', () => {
   it('packs the EIP-2612 domain with chainId, name, version, verifyingContract', () => {
     const td = buildPermitTypedData({
-      chainId: 137,
+      chainId: 8453,
       tokenAddress: TOKEN,
       tokenName: 'USD Coin',
       tokenVersion: '2',
@@ -90,7 +94,7 @@ describe('buildPermitTypedData', () => {
     expect(td.domain).toEqual({
       name: 'USD Coin',
       version: '2',
-      chainId: 137,
+      chainId: 8453,
       verifyingContract: TOKEN,
     });
     expect(td.primaryType).toBe('Permit');
@@ -154,12 +158,31 @@ describe('signPermit', () => {
     return BigInt(Math.floor(Date.now() / 1000) + 5 * 60);
   }
 
+  it('refuses an unknown token domain before contacting the wallet (ADR-0004)', async () => {
+    const wallet = fakeWallet();
+    const attempt = signPermit({
+      walletClient: wallet,
+      chainId: 1,
+      tokenAddress: TOKEN,
+      tokenName: 'USD Coin',
+      tokenVersion: '2',
+      owner: OWNER,
+      spender: SPENDER,
+      value: 1_000_000n,
+      nonce: 0n,
+      deadline: freshDeadline(),
+    });
+    await expect(attempt).rejects.toBeInstanceOf(UnknownPermitTokenError);
+    await expect(attempt).rejects.toThrow(/Refusing to sign EIP-2612 permit for unknown token domain/);
+    expect(wallet.signTypedData).not.toHaveBeenCalled();
+  });
+
   it('signs and returns split v/r/s for a valid input', async () => {
     const wallet = fakeWallet();
     const out = await signPermit({
       walletClient: wallet,
       chainId: 1,
-      tokenAddress: TOKEN,
+      tokenAddress: USDC_ETHEREUM,
       tokenName: 'USD Coin',
       tokenVersion: '2',
       owner: OWNER,
@@ -179,8 +202,9 @@ describe('signPermit', () => {
     await expect(signPermit({
       walletClient: wallet,
       chainId: 1,
-      tokenAddress: TOKEN,
+      tokenAddress: USDC_ETHEREUM,
       tokenName: 'USD Coin',
+      tokenVersion: '2',
       owner: OWNER,
       spender: SPENDER,
       value: 1n,
@@ -190,20 +214,21 @@ describe('signPermit', () => {
   });
 
   it('refuses to sign when the wallet chainId disagrees with the permit chainId', async () => {
-    // The wallet is on chain 137 but the caller is asking us to sign for chain 1.
+    // The wallet is on chain 8453 (Base) but the caller is asking us to sign for chain 1.
     // The signed message would be replayable on the wallet's actual chain.
-    const wallet = fakeWallet({ chainId: 137 });
+    const wallet = fakeWallet({ chainId: 8453 });
     await expect(signPermit({
       walletClient: wallet,
       chainId: 1,
-      tokenAddress: TOKEN,
+      tokenAddress: USDC_ETHEREUM,
       tokenName: 'USD Coin',
+      tokenVersion: '2',
       owner: OWNER,
       spender: SPENDER,
       value: 1n,
       nonce: 0n,
       deadline: freshDeadline(),
-    })).rejects.toThrow(/Wallet chainId 137 does not match permit chainId 1/);
+    })).rejects.toThrow(/Wallet chainId 8453 does not match permit chainId 1/);
   });
 
   it('refuses to sign with a MAX_SAFE_INTEGER deadline (no expiry)', async () => {
@@ -211,8 +236,9 @@ describe('signPermit', () => {
     await expect(signPermit({
       walletClient: wallet,
       chainId: 1,
-      tokenAddress: TOKEN,
+      tokenAddress: USDC_ETHEREUM,
       tokenName: 'USD Coin',
+      tokenVersion: '2',
       owner: OWNER,
       spender: SPENDER,
       value: 1n,
@@ -228,8 +254,9 @@ describe('signPermit', () => {
     await expect(signPermit({
       walletClient: wallet,
       chainId: 1,
-      tokenAddress: TOKEN,
+      tokenAddress: USDC_ETHEREUM,
       tokenName: 'USD Coin',
+      tokenVersion: '2',
       owner: OWNER,
       spender: SPENDER,
       value: 1n,

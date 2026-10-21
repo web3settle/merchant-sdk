@@ -5,6 +5,312 @@ All notable changes to `@web3settle/merchant-sdk` will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — TRON pay-ins carry the payment reference (HP-25) (unpublished, 2026-10-19)
+
+**Breaking** (0.x minor) for the TRON subpath only: attribution is now the default on TRON as it has
+been on EVM since 0.6.0 — `useTronPayment().startPayment` refuses to prompt TronLink without a
+`paymentReference` unless `mode: 'unattributed'` is passed, and `TronTopUpModal` requires
+`Web3SettleConfig.createPayment` (or `payInMode: 'unattributed'`). Root `humanpending.md` HP-25.
+Version is the agent's call (reversible — one line in `package.json` + lockfile); nothing is published
+by this change, merging lets CI publish its usual `0.7.0-dev.<run>` prerelease to GitHub Packages.
+
+### CI — SHA-pinned actions, Dependabot for actions, changelog gate (2026-10-20)
+
+- Every `uses:` in `.github/workflows/` (ci, security, sdk-supplychain) is pinned to the full commit SHA
+  of the release the floating tag resolved to on 2026-10-20, with a `# vX.Y.Z` trailing comment
+  (`actions/checkout` v4.4.0, `actions/setup-node` v4.4.0, `actions/upload-artifact` v4.6.2,
+  `actions/dependency-review-action` v4.9.0, `github/codeql-action` v3.39.0,
+  `trufflesecurity/trufflehog` `@main` → v3.99.3). Same versions as before; a tag can move, a SHA cannot.
+- `.github/dependabot.yml`: weekly `github-actions` ecosystem against `develop` next to the existing
+  `npm` block, so the pins are bumped by PR.
+- `.github/workflows/changelog-check.yml` (new): PRs into `develop` fail unless `CHANGELOG.md` is among
+  the changed files; the `no-changelog` label is the documented escape hatch. No library change — the
+  `0.7.0-dev.<run>` prerelease this merge publishes is identical in content.
+
+### Security — dependency audit clean again (2026-10-20)
+
+- `follow-redirects` 1.16.0 → **1.16.1** (transitive via `tronweb` → `axios`; the `overrides` floor
+  moves to `^1.16.1`): GHSA-q3jh-wrc6-jgq8 / GHSA-8r9p-f939-6h3c (high — array-form headers bypass
+  cross-origin credential stripping; `sensitiveHeaders` regex escaping). Published after the last
+  `develop` run, so every open PR's `npm audit --audit-level=high` gate went red; this restores it.
+- `vite` dev dependency lockfile refresh to 8.3.4 (moderate, `launch-editor` GHSA-698v-4r3x-3vcv,
+  dev-only). `npm audit`: 0 vulnerabilities.
+### Tests — `./wc` and `./headless` on a verified payment config (2026-10-20)
+
+- `src/__tests__/verified-config-surfaces.test.tsx`: the headless controller and the
+  `<web3settle-pay-button>` element, each building its own API client, load a payment config that
+  went through the real Ed25519 verification — signed with a throwaway test key that is trusted
+  through the existing test seam (`vi.spyOn(config, 'WEB3SETTLE_PAYMENT_CONFIG_PUBKEY_PRIMARY', 'get')`,
+  as `api-client.test.ts` already does) — and refuse one signed by another key or tampered after
+  signing (`signature-invalid`, runner never called, `payment-error` raised). No production override
+  of the pinned key was added.
+### Tests — gateway contract fixtures (C1, SDK half; 2026-10-20)
+
+- `src/__fixtures__/contract/` vendors gateway-core-backend `tests/fixtures/contract/` (source commit in
+  the README there) and `src/__tests__/contract-fixtures.test.ts` runs them through the real Zod schemas
+  and the real Ed25519 verifier with the fixture's TEST-ONLY key as the trusted key (the verifier's
+  `trustedKeysOverride` / `now` seam). **Open finding:** the fixture declares `contractAbiVersion:
+  "V3.2.3"` while the backend controller serves `"V3.2"` and this SDK accepts `V3.1`/`V3.2` only
+  (fail closed); resolved in the merged backend fixtures (`"V3.2"`, commit 0cfeeb5).
+
+### Fixed — `TronTopUpModal` refuses a payment whose token decimals are unknown (2026-10-20)
+
+- The attributed path used to fall back to `6` decimals when the selected token was no longer in the
+  storefront's payment config (or the chain declared no native currency) and would have invoiced the
+  merchant for a wrong amount. It now shows an error on the review step and makes no quote, no
+  `createPayment` and no `payInToken*` / `payInNative*` call. Pinned by
+  `src/__tests__/tron-topup-modal.test.tsx`.
+
+### Changed — no state is set synchronously inside effects (2026-10-20)
+
+- `TopUpModal`, `TronTopUpModal` and `useQuote` reset on open / derive the shown step, the
+  pre-selected chain and token, and the "stale result hidden until the fresh one lands" rule for the
+  gas estimate, token balance and quote during render instead of in effects (React's "adjust state
+  when a prop changes" pattern). No observable behaviour change; the stale frame between open and
+  reset is gone. Characterised by the new `topup-modal`, `tron-topup-modal` and `use-quote` tests.
+  9 of the 10 `react-hooks/set-state-in-effect` warnings are cleared; the remaining one
+  (`TronProvider` picking up an already-unlocked TronLink at mount) is kept on purpose — reading
+  `window.tronWeb` during the first render would desync hydration for SSR hosts.
+
+### Changed — runtime dependencies (2026-10-20, carried from Dependabot `main` PR #33)
+
+- `@noble/curves` 1.9.1 → **2.2.0** and `@noble/hashes` 1.8.0 → **2.2.0** (semver-major for the
+  libraries; no SDK API change). Noble 2.x requires explicit `.js` subpaths, so the imports are now
+  `@noble/curves/ed25519.js` and `@noble/hashes/sha2.js` (the `sha256` export; the `sha256` subpath
+  is gone in 2.x). `ed25519.verify(sig, msg, pub)` and `sha256(bytes)` behave the same — the Ed25519
+  payment-config verifier and the permit-digest tests pass unchanged. Tests use the renamed
+  `ed25519.utils.randomSecretKey()`.
+- `i18next` 26.3.1 → 26.3.6, `react-i18next` 17.0.8 → 17.0.11 (patch).
+- Runtime deps stay exact-version (`sdk-supplychain` gate). The dev-deps group (Dependabot #43) is
+  not carried here.
+
+### Added — TRON (`@web3settle/merchant-sdk/tron`)
+
+- `MERCHANT_PAY_IN_ABI` gains `payInNativeWithReference(bytes32)`,
+  `payInTokenWithReference(address,uint256,bytes32)` and the `PaymentReference(bytes32 indexed)`
+  event; selectors (`0x817da306` / `0xa7d020be`) and the event topic pinned in tests against the
+  compiled TRON V3.2.3 artifact (identical to the EVM build — keccak of the signature).
+- `TronPaymentPipeline.execute(chain, token, amount, { paymentReference })` and the pure
+  `buildTronPayInCall({ token, amount, paymentReference? })` it and the tests share.
+- `useTronPayment().startPayment(…, { paymentReference, mode, atomicAmount })` — attribution decided
+  by `resolveAttribution` before anything reaches the wallet; `atomicAmount` sends a pre-quoted
+  amount instead of quoting again (so the created payment and the sent amount cannot drift).
+- `TronTopUpModal` asks `Web3SettleConfig.createPayment` for the reference at Pay time (quote → create
+  → prompt), shows its failure on the review step, and `onSuccess(session).id` is the `requestId`.
+- `estimateTronGas({ paymentReference })` estimates the `…WithReference` call (bytes32 parameter).
+- `PaymentPipeline.execute` takes an optional `ExecuteOptions` (exported from the root and `./tron`);
+  the EVM hook is unchanged. `./tron` re-exports `resolveAttribution` and the reference errors.
+
+### Changed
+
+- `PaymentPipeline.execute` signature gains an optional fourth parameter (source-compatible).
+
+## [0.6.0] — Reference-aware pay-ins, real permit allowlist (unpublished, 2026-09-30)
+
+**Breaking** (0.x minor). This change publishes nothing; merging it to `develop` lets CI publish its usual `0.6.0-dev.<run>` prerelease to GitHub Packages (HP-3).
+Supersedes merchant-sdk#47, whose toolchain repair is carried unchanged below.
+
+### Added — pay-ins attributed to a payment request (MerchantPayIn V3.2.3, HP-16)
+
+- `PAYMENT_CONTRACT_ABI` gains `payInNativeWithReference(bytes32)`,
+  `payInTokenWithReference(address,uint256,bytes32)` and the `PaymentReference(bytes32 indexed)`
+  event; selectors pinned in tests against the compiled V3.2.3 artifact.
+- `executePayInNativeWithReference` / `executePayInTokenWithReference`, and the pure
+  `buildPayInCall({ token, amount, paymentReference? })` every path shares.
+- `usePayment().startPayment(…, { paymentReference })` sends the `…WithReference` call.
+- `Web3SettleConfig.createPayment(ctx)` — the modal asks the merchant backend for the reference at
+  Pay time, handing it the exact chain / token / amount (and `userId`, which the modal used to drop).
+  `onSuccess(session).id` is now the `requestId`, not a zero UUID.
+- Headless `createPayButtonController`: `start(amount, { paymentReference })`; the runner receives
+  it. `<web3settle-pay-button payment-reference="0x…">` validates it and emits it on `payment-started`.
+- `isPaymentReference`, `assertPaymentReference`, `resolveAttribution`,
+  `MissingPaymentReferenceError`, `InvalidPaymentReferenceError`.
+
+### Changed — attribution is the default and is enforced
+
+Every pay path resolves attribution before the wallet is prompted. Without a valid non-zero bytes32
+reference it refuses (`MissingPaymentReferenceError`). The plain `payInNative()` / `payInToken()`
+remain behind the explicit `mode: 'unattributed'` (`payInMode` on the config) opt-in: such deposits
+settle but reach the webhook with no `paymentRequestId` / `metadata`.
+
+### Removed
+
+- `Web3SettleApiClient.createTopUpSession` / `getSessionStatus`, `CreateSessionResponseSchema`,
+  `CreateSessionResponse`, `SESSION_POLL_INTERVAL_MS`, `MAX_POLL_ATTEMPTS`. They targeted
+  `/api/storefronts/{id}/sessions`, which no gateway serves (404), and creating a payment needs the
+  storefront API key, which must not be in the browser. The server-side create → reference flow
+  replaces them (README, *How a payment reaches your order*).
+
+### Fixed — permit allowlist holds the real digests (HP-5)
+
+`KNOWN_PERMIT_TOKENS` held one placeholder digest that matched no token. It now holds USDC
+Ethereum, DAI Ethereum and USDC Base, each re-derived from the chain (`docs/PERMIT_ALLOWLIST.md`,
+`scripts/verify-permit-domains.mjs`). ADR-0004 is unchanged: unknown domains still fall back /
+throw. The four `signPermit` tests that failed on the placeholder now target the USDC domain and
+exercise their own guards; the unknown-domain refusal has its own test.
+
+DAI's permit is not EIP-2612 (on-chain `PERMIT_TYPEHASH` =
+`Permit(holder,spender,nonce,expiry,allowed)`), so `detectPermitSupport` now reports a token with a
+non-EIP-2612 `PERMIT_TYPEHASH` as unsupported (`reason: 'non-eip2612-permit'`) and `permit: 'auto'`
+uses `approve()` for it, instead of signing a payload the token cannot redeem.
+
+### Not in this release
+
+- TRON (`./tron`) pay-ins are not reference-aware yet (contract + gateway are).
+- `WEB3SETTLE_PAYMENT_CONFIG_PUBKEY_PRIMARY` is still the all-zero placeholder, so the signed
+  payment-config never verifies against a real gateway and the modal / pay button cannot load a
+  chain list. Use `usePayment` with your own `ChainConfig` until the real key ships.
+
+## [0.6.0 toolchain, from #47] — Restore lint + build under ESLint 10 / Tailwind v4 (2026-09-24)
+
+Toolchain only (carried from merchant-sdk#47, which 0.6.0 supersedes). Every
+chain-cut guarantee is intact: `archive/solana/` is still unwired, the `exports`
+map is still `. / ./tron / ./headless / ./wc / ./styles.css`, and the 137 / 900–902
+drop guards still pass.
+
+### Fixed — `npm run lint` crashed, now runs clean
+
+`eslint-plugin-react` under ESLint 10 threw
+`TypeError: contextOrFilename.getFilename is not a function` before linting a
+single file. No published version of `eslint-plugin-react` (max 7.37.5, peers
+`eslint ^3 … ^9.7`) or `eslint-plugin-jsx-a11y` (max 6.10.2, peers `… ^9`)
+supports ESLint 10, so the honest minimal fix is to pin the linter, not the
+plugins: **`eslint` and `@eslint/js` `^10` → `^9.39.5`**.
+
+- **`.npmrc` is deleted.** The `legacy-peer-deps=true` workaround added during the
+  chain cut existed only because ESLint 10 broke the peer graph. With eslint 9 the
+  graph resolves strictly — `npm ci` now succeeds with no flags at all.
+- ⚠️ eslint 9.39.5 installs with a *"no longer supported"* deprecation notice. That
+  is the trade: a supported-but-broken linter versus an EOL-but-working one. The
+  real exit is upstream — either those two plugins ship ESLint 10 support, or they
+  get dropped. Tracked in `humanpending.md`.
+
+With linting actually executing, 23 previously-masked errors surfaced. 14 were
+mechanical and are fixed here:
+
+| Rule | Count | How |
+|---|---|---|
+| `@typescript-eslint/no-unnecessary-type-assertion` | 7 | `eslint --fix` — redundant `as` removed |
+| `@typescript-eslint/prefer-for-of` | 3 | index loops → `for…of` (incl. `permitDomainKey`) |
+| `@typescript-eslint/prefer-optional-chain` | 2 | in `payment-config-verifier.ts` |
+| `@typescript-eslint/require-await` | 2 | test double now returns `Promise.resolve` / `Promise.reject` |
+| unused `eslint-disable` directive | 1 | replaced with a directive that states *why* the cast exists |
+
+The `prefer-optional-chain` and `prefer-for-of` edits touch the **signed-config
+verifier** and the **permit-allowlist digest function**, so they were applied by
+hand rather than by a fixer and proven behaviour-neutral: `permit-allowlist`,
+`payment-config-verifier` and `api-client` suites pass **26/26**.
+
+The remaining 9 are `react-hooks/set-state-in-effect`, new in
+`eslint-plugin-react-hooks` v7. They flag a pre-existing pattern in the payment
+modals where an effect mirrors a `status` prop onto a local `step` state machine.
+That fix is a real refactor of live payment-flow state and does not belong in a
+CI-repair change, so the **rule is set to `warn`** with the rationale inline in
+`eslint.config.js`. Lint reports `0 errors, 10 warnings` and exits 0. No security
+or correctness rule was relaxed.
+
+### Fixed — `npm run build` failed in two places
+
+1. **Tailwind v4** moved its PostCSS plugin to a separate package; passing
+   `tailwindcss` itself as a plugin throws. Added `@tailwindcss/postcss` and
+   pointed `postcss.config.js` at it.
+2. **`esbuild` was never installed**, so Vite died with
+   `Cannot find package 'esbuild'`. Two causes, both fixed:
+   - `overrides.esbuild` pinned `^0.25.0` while Vite 8.3.1 peers
+     `^0.27.0 || ^0.28.0` — an unsatisfiable slot. Raised to **`^0.28.1`**, which
+     also clears GHSA-gv7w-rqvm-qjhr (**high**, esbuild `< 0.28.1`) and
+     GHSA-g7r4-m6w7-qqqr. The old `^0.25.0` pin was itself vulnerable to both.
+   - Vite declares `esbuild` as an **optional** peer, so it is never installed
+     transitively. Added it as an explicit devDependency.
+
+### npm audit
+
+**0 vulnerabilities**, down from 10 high / 16 moderate / 2 low. No `--force` was
+used; the only version changes are the ones listed above.
+
+### Still failing — deliberately untouched
+
+The 4 `signPermit` cases in `src/__tests__/permit-allowlist.test.ts` still fail.
+They hit ADR-0004's `KNOWN_PERMIT_TOKENS` gate with a token domain that is not
+allow-listed, and the shipped allowlist holds one placeholder digest. Making them
+pass means deciding the real allowlist contents — **the gate was not weakened and
+the tests were not mocked out.** 165 passed / 4 failed, unchanged by this work.
+
+## [Unreleased] — Chain cut: drop Polygon, archive Solana (2026-09-24)
+
+Product decisions **D1** (drop Polygon permanently) and **D2** (archive Solana
+out of mainline). Active chain families: **EVM (non-Polygon) + TRON**.
+
+> **Version not bumped on purpose.** This is a breaking API change and needs a
+> `0.6.0` release decision from the founder — bumping here would make CI publish
+> a prerelease carrying breaking changes off `develop`. See the workspace-root
+> `humanpending.md`.
+
+### Removed — BREAKING
+
+- **`@web3settle/merchant-sdk/solana` subpath.** Gone from `exports`, from the
+  Vite entry map, and from the peer/dev dependency sets (`@solana/web3.js`,
+  `@solana/wallet-adapter-base`, `@solana/wallet-adapter-react`). Sources moved
+  to `archive/solana/` — outside `tsconfig` `include`, the Vitest `include`, and
+  the ESLint `files` glob, so nothing typechecks, lints, tests or bundles them.
+- **Solana-shaped holes in the shared surface**, rather than leaving them
+  returning `null` for every chain: `SolanaCommitmentLevel`,
+  `ConfirmationPolicy.commitmentLevel()`, `createHighValueConfirmationPolicy()`,
+  and `SolanaGasBreakdown`.
+- **`'solana'` from the union types** `ChainFamily`, `PaymentFamily` and
+  `TelemetryChain`.
+- **The `solana.*` i18n namespace** from `en` and `pt-BR`.
+- **Polygon (chainId 137)** from `DEFAULT_CHAINS`, `CHAIN_ICONS`,
+  `COINGECKO_CHAIN_IDS`, `KNOWN_CONTRACT_ADDRESSES`,
+  `DEFAULT_CONFIRMATION_THRESHOLDS`, `CHAIN_FAMILY_REGISTRY`,
+  `DEFAULT_SECONDS_TO_FINALITY`, the `price-feed` `matic-network` fallback, the
+  wagmi chain list in `Web3SettleProvider`, and the EVM chain-id allowlists in
+  `TopUpModal` / `evm/confirmationPolicy`.
+
+### Added
+
+- **Drop guards** in `src/__tests__/confirmationPolicy.test.ts`: chainId 137 and
+  the Solana sentinels 900–902 must be absent from every registry, must resolve
+  as *unknown* chains (12 confirmations, 0 s ETA) rather than as their old
+  selves, and no registry entry may claim a family outside `evm | tron`. These
+  fail if a dropped chain is re-added without a founder decision.
+- `archive/solana/README.md` — quarantine banner and re-wiring checklist.
+
+### Fixed — pre-existing, not caused by the cut
+
+These three were blocking `tsc --noEmit`, which is the check that proves the cut
+did not break the type surface. Fixed minimally so the cut is verifiable; each is
+independent of the chain work:
+
+- `tsconfig.json` — dropped the deprecated `baseUrl` (and the `@/*` `paths` alias
+  it enabled, which nothing imported). TypeScript 6 makes `baseUrl` a hard error,
+  so `npm run typecheck` aborted before reaching any source file.
+- `src/hooks/useWallet.ts` — wagmi v3's `useBalance` no longer returns
+  `formatted`; format `value`/`decimals` with viem's `formatUnits` so the SDK's
+  public `balance: string | null` contract is unchanged.
+- `src/css.d.ts` (new) — TypeScript 6 needs a declaration for the side-effect
+  `import './styles.css'` in `src/styles.ts`.
+- `.npmrc` (new) — pins `legacy-peer-deps=true`. `eslint-plugin-jsx-a11y@6.10.2`
+  (its newest) declares `eslint: ^3 … ^9` while this package pins eslint ^10, so
+  a clean `npm ci` fails ERESOLVE. The committed lockfile was already built that
+  way; making it explicit keeps local installs, CI and the lockfile in agreement.
+
+### Still broken — pre-existing, out of scope for this cut
+
+Verified as failing identically on the pre-cut tree:
+
+- `npm run lint` — `eslint-plugin-react` is incompatible with ESLint 10
+  (`contextOrFilename.getFilename is not a function`). Needs eslint pinned to ^9
+  or plugin releases that support 10.
+- `npm run build` (the `vite build` half) — Tailwind v4 moved its PostCSS plugin
+  to `@tailwindcss/postcss`; after that is fixed the build next fails on a
+  missing `esbuild` (the root `overrides.esbuild` pin vs Vite 8 / rolldown).
+- 4 tests in `src/__tests__/permit.test.ts` — `signPermit` gained the
+  `KNOWN_PERMIT_TOKENS` gate (ADR-0004) but those cases still use a token domain
+  that is not allow-listed, and the shipped allowlist holds one placeholder
+  digest. Fixing it means deciding the real allowlist contents, not editing a
+  test. 165 of 169 tests pass.
+
 ## [0.5.0] - 2026-05-09
 
 ### Added

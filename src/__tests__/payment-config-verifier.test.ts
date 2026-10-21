@@ -1,17 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { ed25519 } from '@noble/curves/ed25519';
+import { ed25519 } from '@noble/curves/ed25519.js';
 import { canonicalJson } from '../core/canonical-json';
 import { verifyPaymentConfig } from '../core/payment-config-verifier';
 import { PAYMENT_CONFIG_MAX_AGE_MS } from '../core/config';
 
 function bytesToHex(b: Uint8Array): string {
   let s = '';
-  for (let i = 0; i < b.length; i += 1) s += b[i].toString(16).padStart(2, '0');
+  for (const byte of b) s += byte.toString(16).padStart(2, '0');
   return s;
 }
 
 function newKeypair(): { priv: Uint8Array; pub: string } {
-  const priv = ed25519.utils.randomPrivateKey();
+  const priv = ed25519.utils.randomSecretKey();
   const pub = bytesToHex(ed25519.getPublicKey(priv));
   return { priv, pub };
 }
