@@ -5,6 +5,18 @@ All notable changes to `@web3settle/merchant-sdk` will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Toolchain: restore `npm ci` on `develop` after Dependabot #65 (2026-10-26)
+
+Toolchain only; no runtime or API change.
+
+- Dependabot #65 (dev-deps group) moved `typescript` to `^7.0.2` and `eslint` / `@eslint/js` to `^10`,
+  undoing the ESLint 9 pin from the 0.6.0 toolchain section below. `typescript-eslint` 8.72 peers
+  `typescript <6.1` and `eslint-plugin-react` / `eslint-plugin-jsx-a11y` still peer `eslint <=9`, so
+  `npm ci` failed on `develop` (and merchant-integration-demo's `develop` test job, which builds it).
+- `typescript` → `~6.0.3`, `eslint` and `@eslint/js` → `^9.39.5`; every other #65 bump is kept.
+- `.github/dependabot.yml` now ignores `typescript >=6.1` and `eslint` / `@eslint/js` majors until the
+  plugins support them, so the same bump is not proposed again.
+
 ## [0.7.0] — TRON pay-ins carry the payment reference (HP-25) (2026-10-19; published to GitHub Packages 2026-10-21 by the develop → main promotion, #50)
 
 **Breaking** (0.x minor) for the TRON subpath only: attribution is now the default on TRON as it has
