@@ -12,6 +12,16 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
+    # 2026-10-26: #65 jumped to typescript 7 and eslint 10, which broke
+    # `npm ci` (typescript-eslint 8.72 peers typescript <6.1; jsx-a11y and
+    # react plugins peer eslint <=9). Hold these until the plugins catch up.
+    ignore:
+      - dependency-name: "typescript"
+        versions: [">=6.1.0"]
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@eslint/js"
+        update-types: ["version-update:semver-major"]
     # Runtime deps require human review — never auto-merge.
     allow:
       - dependency-type: "all"
